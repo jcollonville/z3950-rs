@@ -1,0 +1,21 @@
+[package]
+name = "z3950-rs"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+tokio = { version = "1", features = ["net", "io-util", "macros", "rt-multi-thread"] }
+marc-rs = "0.1"
+rasn = "0.28"
+
+bytes = "1"
+thiserror = "2.0"
+tracing = "0.1"
+
+
+
+## `examples/search.rs` is built by Cargo automatically as an example target.
+## Run it via: `cargo run --example search -- [args]`
+
+## NOTE: `test_manual_pdu` example was removed from the repository.
+## Keep this section empty unless we reintroduce the example file.
