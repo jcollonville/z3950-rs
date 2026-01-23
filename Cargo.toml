@@ -5,7 +5,7 @@ edition = "2021"
 description = "Minimal asynchronous (Tokio) Z39.50 client with MARC parsing"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/elidune/z3950-rs"
-keywords = ["z39.50", "marc", "library", "async", "tokio"]
+keywords = ["z3950", "marc", "library", "async", "tokio"]
 categories = ["network-programming", "parsing"]
 authors = ["jcollonville@b-612.fr>"]
 
