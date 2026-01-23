@@ -1,5 +1,8 @@
 # z3950-rs
 
+[![crates.io](https://img.shields.io/crates/v/z3950-rs.svg)](https://crates.io/crates/z3950-rs)
+[![docs.rs](https://docs.rs/z3950-rs/badge.svg)](https://docs.rs/z3950-rs)
+
 Minimal asynchronous (Tokio) Z39.50 client with MARC parsing via [`marc-rs`](https://crates.io/crates/marc-rs). PDUs are encoded/decoded in ASN.1 BER using [`rasn`](https://crates.io/crates/rasn).
 
 ## Key features
