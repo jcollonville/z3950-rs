@@ -1,6 +1,6 @@
 [package]
 name = "z3950-rs"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 description = "Minimal asynchronous (Tokio) Z39.50 client with MARC parsing"
 license = "MIT OR Apache-2.0"
@@ -16,3 +16,15 @@ rasn = "0.28"
 bytes = "1"
 thiserror = "2.0"
 tracing = "0.1"
+clap = { version = "4", features = ["derive"], optional = true }
+serde_json = { version = "1", optional = true }
+rustyline = { version = "14", optional = true }
+
+[features]
+default = []
+cli = ["clap", "serde_json", "rustyline"]
+
+[[bin]]
+name = "z3950"
+path = "src/bin/z3950.rs"
+required-features = ["cli"]

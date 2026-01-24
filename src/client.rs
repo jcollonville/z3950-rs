@@ -1,6 +1,19 @@
 use crate::error::{Error, Result};
 use crate::marc::{MarcRecord, parse_records};
-use crate::pdu::{Apdu, Credentials, SearchResponse, extract_marc_records, make_init_request, make_present_request, make_search_request, make_type1_query};
+use crate::pdu::{
+    Apdu, Close, CloseReason, Credentials, DeleteOperationStatus, DeleteResultSetResponse,
+    DuplicateDetectionResponse, DuplicateDetectionStatus, ExtendedServicesFunction,
+    ExtendedServicesResponse, ExtendedServicesStatus, External, ListEntries, ResourceReport,
+    ResourceReportResponse, ResourceReportStatus, ScanResponse, ScanStatus, SearchResponse,
+    SortKeySpec, SortResponse, SortStatus, TriggerRequestedAction, WaitAction,
+    extract_marc_records, make_access_control_response, make_close_request,
+    make_delete_all_result_sets_request, make_delete_result_set_request,
+    make_duplicate_detection_request, make_extended_services_request, make_init_request,
+    make_present_request, make_resource_control_response, make_resource_report_request,
+    make_scan_request, make_search_request, make_sort_request, make_sort_key_by_field,
+    make_trigger_resource_control_request, make_type1_query,
+};
+use rasn::types::ObjectIdentifier;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
@@ -9,6 +22,7 @@ const DEFAULT_RESULT_SET: &str = "default";
 pub struct Client {
     stream: TcpStream,
     result_set: String,
+    closed: bool,
 }
 
 impl Client {
@@ -30,11 +44,23 @@ impl Client {
         Ok(Self {
             stream,
             result_set: DEFAULT_RESULT_SET.to_string(),
+            closed: false,
         })
+    }
+
+    /// Returns the current result set name.
+    pub fn result_set_name(&self) -> &str {
+        &self.result_set
+    }
+
+    /// Sets a custom result set name for subsequent operations.
+    pub fn set_result_set_name(&mut self, name: impl Into<String>) {
+        self.result_set = name.into();
     }
 
     /// Executes a Type-1 (RPN) search against the given databases.
     pub async fn search(&mut self, databases: &[&str], term: &str) -> Result<SearchResponse> {
+        self.check_not_closed()?;
         let dbs: Vec<String> = databases.iter().map(|s| s.to_string()).collect();
         let query = make_type1_query(4, term)?;
         let req = make_search_request(&dbs, &self.result_set, query)?;
@@ -44,20 +70,292 @@ impl Client {
         Ok(r)
     }
 
+    /// Presents raw record data from the current result set.
     pub async fn present_raw(&mut self, start: i64, count: i64) -> Result<Vec<Vec<u8>>> {
+        self.check_not_closed()?;
         let req = make_present_request(&self.result_set, start, count)?;
         send_pdu(&mut self.stream, &Apdu::PresentRequest(req)).await?;
         let r = read_pdu::<crate::pdu::PresentResponse>(&mut self.stream).await?;
         extract_marc_records(&r)
     }
 
+    /// Presents and parses MARC records from the current result set.
     pub async fn present_marc(&mut self, start: i64, count: i64) -> Result<Vec<MarcRecord>> {
         let raw = self.present_raw(start, count).await?;
         parse_records(&raw)
     }
 
-    pub async fn scan(&mut self, _database: &str, _term: &str, _count: i64) -> Result<()> {
-        Err(Error::Protocol("Scan operation not implemented in this preview".into()))
+    // ========================================================================
+    // Delete Result Set
+    // ========================================================================
+
+    /// Deletes specific result sets by name.
+    pub async fn delete_result_sets(&mut self, result_sets: &[&str]) -> Result<DeleteResultSetResponse> {
+        self.check_not_closed()?;
+        let req = make_delete_result_set_request(result_sets);
+        send_pdu(&mut self.stream, &Apdu::DeleteResultSetRequest(req)).await?;
+        let r = read_pdu::<DeleteResultSetResponse>(&mut self.stream).await?;
+        Ok(r)
+    }
+
+    /// Deletes all result sets.
+    pub async fn delete_all_result_sets(&mut self) -> Result<DeleteResultSetResponse> {
+        self.check_not_closed()?;
+        let req = make_delete_all_result_sets_request();
+        send_pdu(&mut self.stream, &Apdu::DeleteResultSetRequest(req)).await?;
+        let r = read_pdu::<DeleteResultSetResponse>(&mut self.stream).await?;
+        Ok(r)
+    }
+
+    /// Returns true if the delete operation was successful.
+    pub fn delete_was_successful(response: &DeleteResultSetResponse) -> bool {
+        response.delete_operation_status == DeleteOperationStatus::Success
+    }
+
+    // ========================================================================
+    // Scan
+    // ========================================================================
+
+    /// Scans (browses) an index starting from the given term.
+    ///
+    /// # Arguments
+    /// * `databases` - Database names to scan
+    /// * `term` - Starting term for the scan
+    /// * `attribute_type` - BIB-1 attribute type (e.g., 4 for title, 1 for author)
+    /// * `count` - Number of terms to retrieve
+    /// * `preferred_position` - Preferred position of the starting term in results
+    pub async fn scan(
+        &mut self,
+        databases: &[&str],
+        term: &str,
+        attribute_type: i64,
+        count: i64,
+        preferred_position: Option<i64>,
+    ) -> Result<ScanResponse> {
+        self.check_not_closed()?;
+        let dbs: Vec<String> = databases.iter().map(|s| s.to_string()).collect();
+        let req = make_scan_request(&dbs, term, attribute_type, None, count, preferred_position)?;
+        send_pdu(&mut self.stream, &Apdu::ScanRequest(req)).await?;
+        let r = read_pdu::<ScanResponse>(&mut self.stream).await?;
+        Ok(r)
+    }
+
+    /// Returns true if the scan was successful.
+    pub fn scan_was_successful(response: &ScanResponse) -> bool {
+        response.scan_status == ScanStatus::Success
+    }
+
+    /// Extracts term entries from a scan response.
+    pub fn extract_scan_entries(response: &ScanResponse) -> Option<&ListEntries> {
+        response.entries.as_ref()
+    }
+
+    // ========================================================================
+    // Sort
+    // ========================================================================
+
+    /// Sorts one or more result sets into a new result set.
+    ///
+    /// # Arguments
+    /// * `input_result_sets` - Names of input result sets
+    /// * `output_result_set` - Name for the sorted output result set
+    /// * `sort_keys` - Sort specifications (use `make_sort_key_by_field` helper)
+    pub async fn sort(
+        &mut self,
+        input_result_sets: &[&str],
+        output_result_set: &str,
+        sort_keys: Vec<SortKeySpec>,
+    ) -> Result<SortResponse> {
+        self.check_not_closed()?;
+        let req = make_sort_request(input_result_sets, output_result_set, sort_keys);
+        send_pdu(&mut self.stream, &Apdu::SortRequest(req)).await?;
+        let r = read_pdu::<SortResponse>(&mut self.stream).await?;
+        Ok(r)
+    }
+
+    /// Creates a sort key for sorting by a field name.
+    pub fn sort_key_by_field(field_name: &str, ascending: bool, case_sensitive: bool) -> SortKeySpec {
+        make_sort_key_by_field(field_name, ascending, case_sensitive)
+    }
+
+    /// Returns true if the sort was successful.
+    pub fn sort_was_successful(response: &SortResponse) -> bool {
+        response.sort_status == SortStatus::Success
+    }
+
+    // ========================================================================
+    // Close
+    // ========================================================================
+
+    /// Closes the Z39.50 session gracefully.
+    pub async fn close(&mut self) -> Result<Close> {
+        self.close_with_reason(CloseReason::Finished, None).await
+    }
+
+    /// Closes the Z39.50 session with a specific reason.
+    pub async fn close_with_reason(
+        &mut self,
+        reason: CloseReason,
+        diagnostic_info: Option<&str>,
+    ) -> Result<Close> {
+        if self.closed {
+            return Err(Error::Protocol("Connection already closed".into()));
+        }
+        let req = make_close_request(reason, diagnostic_info);
+        send_pdu(&mut self.stream, &Apdu::Close(req)).await?;
+        let r = read_pdu::<Close>(&mut self.stream).await?;
+        self.closed = true;
+        Ok(r)
+    }
+
+    /// Returns true if the connection has been closed.
+    pub fn is_closed(&self) -> bool {
+        self.closed
+    }
+
+    // ========================================================================
+    // Extended Services
+    // ========================================================================
+
+    /// Sends an extended services request.
+    ///
+    /// # Arguments
+    /// * `function` - Create, Delete, or Modify
+    /// * `package_type` - OID identifying the type of extended service
+    /// * `package_name` - Optional name for the task package
+    /// * `task_specific_parameters` - Optional externally-defined parameters
+    /// * `wait_action` - How to handle waiting for completion
+    pub async fn extended_services(
+        &mut self,
+        function: ExtendedServicesFunction,
+        package_type: ObjectIdentifier,
+        package_name: Option<&str>,
+        task_specific_parameters: Option<External>,
+        wait_action: WaitAction,
+    ) -> Result<ExtendedServicesResponse> {
+        self.check_not_closed()?;
+        let req = make_extended_services_request(
+            function,
+            package_type,
+            package_name,
+            task_specific_parameters,
+            wait_action,
+        );
+        send_pdu(&mut self.stream, &Apdu::ExtendedServicesRequest(req)).await?;
+        let r = read_pdu::<ExtendedServicesResponse>(&mut self.stream).await?;
+        Ok(r)
+    }
+
+    /// Returns true if the extended services operation completed successfully.
+    pub fn extended_services_was_successful(response: &ExtendedServicesResponse) -> bool {
+        matches!(response.operation_status, ExtendedServicesStatus::Done | ExtendedServicesStatus::Accepted)
+    }
+
+    // ========================================================================
+    // Duplicate Detection
+    // ========================================================================
+
+    /// Performs duplicate detection across result sets.
+    ///
+    /// # Arguments
+    /// * `input_result_sets` - Names of input result sets to check for duplicates
+    /// * `output_result_set` - Name for the output result set
+    /// * `clustering` - Whether to cluster duplicates together
+    pub async fn duplicate_detection(
+        &mut self,
+        input_result_sets: &[&str],
+        output_result_set: &str,
+        clustering: bool,
+    ) -> Result<DuplicateDetectionResponse> {
+        self.check_not_closed()?;
+        let req = make_duplicate_detection_request(input_result_sets, output_result_set, clustering);
+        send_pdu(&mut self.stream, &Apdu::DuplicateDetectionRequest(req)).await?;
+        let r = read_pdu::<DuplicateDetectionResponse>(&mut self.stream).await?;
+        Ok(r)
+    }
+
+    /// Returns true if duplicate detection was successful.
+    pub fn duplicate_detection_was_successful(response: &DuplicateDetectionResponse) -> bool {
+        response.status == DuplicateDetectionStatus::Success
+    }
+
+    // ========================================================================
+    // Resource Control
+    // ========================================================================
+
+    /// Sends a resource control response (typically in response to a resource control request from the server).
+    pub async fn send_resource_control_response(
+        &mut self,
+        continue_flag: bool,
+        result_set_wanted: Option<bool>,
+    ) -> Result<()> {
+        self.check_not_closed()?;
+        let resp = make_resource_control_response(continue_flag, result_set_wanted);
+        send_pdu(&mut self.stream, &Apdu::ResourceControlResponse(resp)).await?;
+        Ok(())
+    }
+
+    /// Triggers a resource control action on the server.
+    pub async fn trigger_resource_control(
+        &mut self,
+        action: TriggerRequestedAction,
+        result_set_wanted: Option<bool>,
+    ) -> Result<()> {
+        self.check_not_closed()?;
+        let req = make_trigger_resource_control_request(action, result_set_wanted);
+        send_pdu(&mut self.stream, &Apdu::TriggerResourceControlRequest(req)).await?;
+        Ok(())
+    }
+
+    // ========================================================================
+    // Resource Report
+    // ========================================================================
+
+    /// Requests a resource report from the server.
+    pub async fn resource_report(
+        &mut self,
+        op_id: Option<&[u8]>,
+        preferred_format: Option<ObjectIdentifier>,
+    ) -> Result<ResourceReportResponse> {
+        self.check_not_closed()?;
+        let req = make_resource_report_request(op_id, preferred_format);
+        send_pdu(&mut self.stream, &Apdu::ResourceReportRequest(req)).await?;
+        let r = read_pdu::<ResourceReportResponse>(&mut self.stream).await?;
+        Ok(r)
+    }
+
+    /// Returns true if the resource report request was successful.
+    pub fn resource_report_was_successful(response: &ResourceReportResponse) -> bool {
+        response.resource_report_status == ResourceReportStatus::Success
+    }
+
+    /// Extracts the resource report from the response.
+    pub fn extract_resource_report(response: &ResourceReportResponse) -> Option<&ResourceReport> {
+        response.resource_report.as_ref()
+    }
+
+    // ========================================================================
+    // Access Control
+    // ========================================================================
+
+    /// Sends an access control response (typically in response to an access control request from the server).
+    pub async fn send_access_control_response(&mut self, response_data: &[u8]) -> Result<()> {
+        self.check_not_closed()?;
+        let resp = make_access_control_response(response_data);
+        send_pdu(&mut self.stream, &Apdu::AccessControlResponse(resp)).await?;
+        Ok(())
+    }
+
+    // ========================================================================
+    // Internal helpers
+    // ========================================================================
+
+    fn check_not_closed(&self) -> Result<()> {
+        if self.closed {
+            Err(Error::Protocol("Connection is closed".into()))
+        } else {
+            Ok(())
+        }
     }
 }
 
@@ -69,9 +367,10 @@ async fn send_pdu(stream: &mut TcpStream, pdu: &Apdu) -> Result<()> {
     Ok(())
 }
 
-async fn read_pdu<T: rasn::AsnType + rasn::Decode>(stream: &mut TcpStream) -> Result<T> {
+async fn read_pdu<T: rasn::AsnType + rasn::Decode + std::fmt::Debug>(stream: &mut TcpStream) -> Result<T> {
     let frame = read_ber_frame(stream).await?;
-    rasn::ber::decode::<T>(&frame).map_err(|e| Error::BerDecode(e.to_string()))
+    let decoded = rasn::ber::decode::<T>(&frame).map_err(|e| Error::BerDecode(e.to_string()))?;
+    Ok(decoded)
 }
 
 /// Reads a complete BER-encoded frame from the stream.
