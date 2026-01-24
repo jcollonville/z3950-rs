@@ -80,7 +80,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let records = client.present_marc(1, count).await?;
     for (idx, r) in records.iter().enumerate() {
         println!("{:?}", r);
-
     }
 
     Ok(())

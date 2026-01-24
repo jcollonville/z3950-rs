@@ -550,12 +550,12 @@ pub enum ResourceReportStatus {
 // ============================================================================
 
 #[derive(Debug, AsnType, Encode, Decode)]
+#[rasn(tag(35))]
 pub struct ScanRequest {
     #[rasn(tag(context, 2))]
     pub reference_id: Option<OctetString>,
     #[rasn(tag(context, 3))]
     pub database_names: Vec<DatabaseName>,
-    #[rasn(tag(context, 4))]
     pub attribute_set: Option<ObjectIdentifier>,
     pub terms_list_and_start_point: AttributesPlusTerm,
     #[rasn(tag(context, 5))]
@@ -1235,6 +1235,7 @@ pub struct ResultSetPlusAttributes {
 }
 
 #[derive(Debug, AsnType, Encode, Decode)]
+#[rasn(tag(context, 102))] // ← le plus important !
 pub struct AttributesPlusTerm {
     #[rasn(tag(context, 44))]
     pub attributes: Vec<AttributeElement>,
@@ -1453,20 +1454,12 @@ pub fn make_delete_all_result_sets_request() -> DeleteResultSetRequest {
 }
 
 /// Builds a ScanRequest to browse an index.
-pub fn make_scan_request(
-    databases: &[String],
-    term: &str,
-    attribute_type: i64,
-    step_size: Option<i64>,
-    number_of_terms: i64,
-    preferred_position: Option<i64>,
-) -> Result<ScanRequest> {
+pub fn make_scan_request(databases: &[String], term: &str, attribute_type: i64, step_size: Option<i64>, number_of_terms: i64, preferred_position: Option<i64>) -> Result<ScanRequest> {
     let database_names = databases
         .iter()
         .cloned()
         .map(|s| {
-            let vs = VisibleString::from_iso646_bytes(s.as_bytes())
-                .map_err(|e| Error::InvalidVisibleString(e.to_string()))?;
+            let vs = VisibleString::from_iso646_bytes(s.as_bytes()).map_err(|e| Error::InvalidVisibleString(e.to_string()))?;
             Ok(DatabaseName::General(vs))
         })
         .collect::<Result<Vec<_>>>()?;
@@ -1493,11 +1486,7 @@ pub fn make_scan_request(
 }
 
 /// Builds a SortRequest to sort result sets.
-pub fn make_sort_request(
-    input_result_sets: &[&str],
-    output_result_set: &str,
-    sort_keys: Vec<SortKeySpec>,
-) -> SortRequest {
+pub fn make_sort_request(input_result_sets: &[&str], output_result_set: &str, sort_keys: Vec<SortKeySpec>) -> SortRequest {
     SortRequest {
         reference_id: None,
         input_result_set_names: input_result_sets.iter().map(|s| Utf8String::from(*s)).collect(),
@@ -1508,11 +1497,7 @@ pub fn make_sort_request(
 }
 
 /// Builds a simple SortKeySpec for sorting by a field name.
-pub fn make_sort_key_by_field(
-    field_name: &str,
-    ascending: bool,
-    case_sensitive: bool,
-) -> SortKeySpec {
+pub fn make_sort_key_by_field(field_name: &str, ascending: bool, case_sensitive: bool) -> SortKeySpec {
     SortKeySpec {
         sort_element: SortElement::Generic(SortKey::SortField(Utf8String::from(field_name))),
         sort_relation: if ascending { SortRelation::Ascending } else { SortRelation::Descending },
@@ -1558,11 +1543,7 @@ pub fn make_extended_services_request(
 }
 
 /// Builds a DuplicateDetectionRequest.
-pub fn make_duplicate_detection_request(
-    input_result_sets: &[&str],
-    output_result_set: &str,
-    clustering: bool,
-) -> DuplicateDetectionRequest {
+pub fn make_duplicate_detection_request(input_result_sets: &[&str], output_result_set: &str, clustering: bool) -> DuplicateDetectionRequest {
     DuplicateDetectionRequest {
         reference_id: None,
         input_result_set_ids: input_result_sets.iter().map(|s| Utf8String::from(*s)).collect(),
@@ -1590,19 +1571,14 @@ pub fn make_resource_control_response(continue_flag: bool, result_set_wanted: Op
 pub fn make_access_control_response(response: &[u8]) -> AccessControlResponse {
     AccessControlResponse {
         reference_id: None,
-        security_challenge_response: Some(AccessControlSecurityChallengeResponse::SimpleForm(
-            OctetString::from(response.to_vec()),
-        )),
+        security_challenge_response: Some(AccessControlSecurityChallengeResponse::SimpleForm(OctetString::from(response.to_vec()))),
         diagnostic: None,
         other_info: None,
     }
 }
 
 /// Builds a TriggerResourceControlRequest.
-pub fn make_trigger_resource_control_request(
-    action: TriggerRequestedAction,
-    result_set_wanted: Option<bool>,
-) -> TriggerResourceControlRequest {
+pub fn make_trigger_resource_control_request(action: TriggerRequestedAction, result_set_wanted: Option<bool>) -> TriggerResourceControlRequest {
     TriggerResourceControlRequest {
         reference_id: None,
         requested_action: action,
@@ -1613,10 +1589,7 @@ pub fn make_trigger_resource_control_request(
 }
 
 /// Builds a ResourceReportRequest.
-pub fn make_resource_report_request(
-    op_id: Option<&[u8]>,
-    preferred_format: Option<ObjectIdentifier>,
-) -> ResourceReportRequest {
+pub fn make_resource_report_request(op_id: Option<&[u8]>, preferred_format: Option<ObjectIdentifier>) -> ResourceReportRequest {
     ResourceReportRequest {
         reference_id: None,
         op_id: op_id.map(|b| OctetString::from(b.to_vec())),

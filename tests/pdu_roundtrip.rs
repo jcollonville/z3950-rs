@@ -1,4 +1,4 @@
-use z3950_rs::pdu::{Apdu, make_present_request, make_search_request, make_type1_query};
+use z3950_rs::pdu::{make_present_request, make_search_request, make_type1_query, Apdu};
 
 #[test]
 fn encode_decode_search_request() {

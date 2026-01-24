@@ -1,5 +1,5 @@
 use crate::error::{Error, Result};
-use marc_rs::{Encoding, FormatEncoding, MarcFormat, Record, parse};
+use marc_rs::{parse, Encoding, FormatEncoding, MarcFormat, Record};
 
 pub type MarcRecord = Record;
 

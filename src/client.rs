@@ -1,17 +1,11 @@
 use crate::error::{Error, Result};
-use crate::marc::{MarcRecord, parse_records};
+use crate::marc::{parse_records, MarcRecord};
 use crate::pdu::{
-    Apdu, Close, CloseReason, Credentials, DeleteOperationStatus, DeleteResultSetResponse,
-    DuplicateDetectionResponse, DuplicateDetectionStatus, ExtendedServicesFunction,
-    ExtendedServicesResponse, ExtendedServicesStatus, External, ListEntries, ResourceReport,
-    ResourceReportResponse, ResourceReportStatus, ScanResponse, ScanStatus, SearchResponse,
-    SortKeySpec, SortResponse, SortStatus, TriggerRequestedAction, WaitAction,
-    extract_marc_records, make_access_control_response, make_close_request,
-    make_delete_all_result_sets_request, make_delete_result_set_request,
-    make_duplicate_detection_request, make_extended_services_request, make_init_request,
-    make_present_request, make_resource_control_response, make_resource_report_request,
-    make_scan_request, make_search_request, make_sort_request, make_sort_key_by_field,
-    make_trigger_resource_control_request, make_type1_query,
+    extract_marc_records, make_access_control_response, make_close_request, make_delete_all_result_sets_request, make_delete_result_set_request, make_duplicate_detection_request,
+    make_extended_services_request, make_init_request, make_present_request, make_resource_control_response, make_resource_report_request, make_scan_request, make_search_request,
+    make_sort_key_by_field, make_sort_request, make_trigger_resource_control_request, make_type1_query, Apdu, Close, CloseReason, Credentials, DeleteOperationStatus, DeleteResultSetResponse,
+    DuplicateDetectionResponse, DuplicateDetectionStatus, ExtendedServicesFunction, ExtendedServicesResponse, ExtendedServicesStatus, External, ListEntries, ResourceReport, ResourceReportResponse,
+    ResourceReportStatus, ScanResponse, ScanStatus, SearchResponse, SortKeySpec, SortResponse, SortStatus, TriggerRequestedAction, WaitAction,
 };
 use rasn::types::ObjectIdentifier;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -124,19 +118,15 @@ impl Client {
     /// * `attribute_type` - BIB-1 attribute type (e.g., 4 for title, 1 for author)
     /// * `count` - Number of terms to retrieve
     /// * `preferred_position` - Preferred position of the starting term in results
-    pub async fn scan(
-        &mut self,
-        databases: &[&str],
-        term: &str,
-        attribute_type: i64,
-        count: i64,
-        preferred_position: Option<i64>,
-    ) -> Result<ScanResponse> {
+    pub async fn scan(&mut self, databases: &[&str], term: &str, attribute_type: i64, count: i64, preferred_position: Option<i64>) -> Result<ScanResponse> {
         self.check_not_closed()?;
         let dbs: Vec<String> = databases.iter().map(|s| s.to_string()).collect();
         let req = make_scan_request(&dbs, term, attribute_type, None, count, preferred_position)?;
+
         send_pdu(&mut self.stream, &Apdu::ScanRequest(req)).await?;
+
         let r = read_pdu::<ScanResponse>(&mut self.stream).await?;
+
         Ok(r)
     }
 
@@ -160,12 +150,7 @@ impl Client {
     /// * `input_result_sets` - Names of input result sets
     /// * `output_result_set` - Name for the sorted output result set
     /// * `sort_keys` - Sort specifications (use `make_sort_key_by_field` helper)
-    pub async fn sort(
-        &mut self,
-        input_result_sets: &[&str],
-        output_result_set: &str,
-        sort_keys: Vec<SortKeySpec>,
-    ) -> Result<SortResponse> {
+    pub async fn sort(&mut self, input_result_sets: &[&str], output_result_set: &str, sort_keys: Vec<SortKeySpec>) -> Result<SortResponse> {
         self.check_not_closed()?;
         let req = make_sort_request(input_result_sets, output_result_set, sort_keys);
         send_pdu(&mut self.stream, &Apdu::SortRequest(req)).await?;
@@ -193,11 +178,7 @@ impl Client {
     }
 
     /// Closes the Z39.50 session with a specific reason.
-    pub async fn close_with_reason(
-        &mut self,
-        reason: CloseReason,
-        diagnostic_info: Option<&str>,
-    ) -> Result<Close> {
+    pub async fn close_with_reason(&mut self, reason: CloseReason, diagnostic_info: Option<&str>) -> Result<Close> {
         if self.closed {
             return Err(Error::Protocol("Connection already closed".into()));
         }
@@ -234,13 +215,7 @@ impl Client {
         wait_action: WaitAction,
     ) -> Result<ExtendedServicesResponse> {
         self.check_not_closed()?;
-        let req = make_extended_services_request(
-            function,
-            package_type,
-            package_name,
-            task_specific_parameters,
-            wait_action,
-        );
+        let req = make_extended_services_request(function, package_type, package_name, task_specific_parameters, wait_action);
         send_pdu(&mut self.stream, &Apdu::ExtendedServicesRequest(req)).await?;
         let r = read_pdu::<ExtendedServicesResponse>(&mut self.stream).await?;
         Ok(r)
@@ -261,12 +236,7 @@ impl Client {
     /// * `input_result_sets` - Names of input result sets to check for duplicates
     /// * `output_result_set` - Name for the output result set
     /// * `clustering` - Whether to cluster duplicates together
-    pub async fn duplicate_detection(
-        &mut self,
-        input_result_sets: &[&str],
-        output_result_set: &str,
-        clustering: bool,
-    ) -> Result<DuplicateDetectionResponse> {
+    pub async fn duplicate_detection(&mut self, input_result_sets: &[&str], output_result_set: &str, clustering: bool) -> Result<DuplicateDetectionResponse> {
         self.check_not_closed()?;
         let req = make_duplicate_detection_request(input_result_sets, output_result_set, clustering);
         send_pdu(&mut self.stream, &Apdu::DuplicateDetectionRequest(req)).await?;
@@ -284,11 +254,7 @@ impl Client {
     // ========================================================================
 
     /// Sends a resource control response (typically in response to a resource control request from the server).
-    pub async fn send_resource_control_response(
-        &mut self,
-        continue_flag: bool,
-        result_set_wanted: Option<bool>,
-    ) -> Result<()> {
+    pub async fn send_resource_control_response(&mut self, continue_flag: bool, result_set_wanted: Option<bool>) -> Result<()> {
         self.check_not_closed()?;
         let resp = make_resource_control_response(continue_flag, result_set_wanted);
         send_pdu(&mut self.stream, &Apdu::ResourceControlResponse(resp)).await?;
@@ -296,11 +262,7 @@ impl Client {
     }
 
     /// Triggers a resource control action on the server.
-    pub async fn trigger_resource_control(
-        &mut self,
-        action: TriggerRequestedAction,
-        result_set_wanted: Option<bool>,
-    ) -> Result<()> {
+    pub async fn trigger_resource_control(&mut self, action: TriggerRequestedAction, result_set_wanted: Option<bool>) -> Result<()> {
         self.check_not_closed()?;
         let req = make_trigger_resource_control_request(action, result_set_wanted);
         send_pdu(&mut self.stream, &Apdu::TriggerResourceControlRequest(req)).await?;
@@ -312,11 +274,7 @@ impl Client {
     // ========================================================================
 
     /// Requests a resource report from the server.
-    pub async fn resource_report(
-        &mut self,
-        op_id: Option<&[u8]>,
-        preferred_format: Option<ObjectIdentifier>,
-    ) -> Result<ResourceReportResponse> {
+    pub async fn resource_report(&mut self, op_id: Option<&[u8]>, preferred_format: Option<ObjectIdentifier>) -> Result<ResourceReportResponse> {
         self.check_not_closed()?;
         let req = make_resource_report_request(op_id, preferred_format);
         send_pdu(&mut self.stream, &Apdu::ResourceReportRequest(req)).await?;
@@ -369,6 +327,7 @@ async fn send_pdu(stream: &mut TcpStream, pdu: &Apdu) -> Result<()> {
 
 async fn read_pdu<T: rasn::AsnType + rasn::Decode + std::fmt::Debug>(stream: &mut TcpStream) -> Result<T> {
     let frame = read_ber_frame(stream).await?;
+
     let decoded = rasn::ber::decode::<T>(&frame).map_err(|e| Error::BerDecode(e.to_string()))?;
     Ok(decoded)
 }
