@@ -28,6 +28,7 @@ The library supports the following Z39.50 operations:
 
 ```rust
 use z3950_rs::Client;
+use std::convert::TryInto;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -38,10 +39,14 @@ async fn main() -> anyhow::Result<()> {
     .await?;
     
     // Search
-    let _search = client.search(&["Voyager"], "rust").await?;
+    let search = client.search(&["Voyager"], "rust").await?;
     
-    // Present records
-    let records = client.present_marc(1, 5).await?;
+    // Get result count and present records
+    let result_count: i64 = search.result_count.try_into()
+        .map_err(|_| anyhow::anyhow!("result_count too large for i64"))?;
+    println!("Found {} records", result_count);
+    
+    let records = client.present_marc(1, result_count).await?;
     for r in records {
         if let Some(title) = r.title() {
             println!("{}", title);
