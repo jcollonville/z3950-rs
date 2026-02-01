@@ -2,6 +2,7 @@ use std::convert::TryInto;
 use std::env;
 
 use z3950_rs::Client;
+use z3950_rs::query_languages::QueryLanguage;
 
 fn label(record: &z3950_rs::MarcRecord) -> String {
     if let Some(cf) = record.control_fields.iter().find(|f| f.tag == "001") {
@@ -73,7 +74,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         _ => None,
     };
     let mut client = Client::connect_with_credentials(&addr, creds).await?;
-    let search = client.search(&[db.as_str()], &query).await?;
+    let search = client.search(&[db.as_str()], QueryLanguage::CQL(query)).await?;
 
     let result_count = search.result_count;
     let count: i64 = result_count.try_into().map_err(|_| "result_count too large for i64")?;

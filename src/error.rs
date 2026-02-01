@@ -21,3 +21,5 @@ pub enum Error {
     #[error("received frame exceeds maximum size ({max} bytes)")]
     FrameTooLarge { max: usize },
 }
+
+

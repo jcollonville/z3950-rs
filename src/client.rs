@@ -1,9 +1,10 @@
+use crate::Query;
 use crate::error::{Error, Result};
 use crate::marc::{parse_records, MarcRecord};
 use crate::pdu::{
     extract_marc_records, make_access_control_response, make_close_request, make_delete_all_result_sets_request, make_delete_result_set_request, make_duplicate_detection_request,
     make_extended_services_request, make_init_request, make_present_request, make_resource_control_response, make_resource_report_request, make_scan_request, make_search_request,
-    make_sort_key_by_field, make_sort_request, make_trigger_resource_control_request, make_type1_query, Apdu, Close, CloseReason, Credentials, DeleteOperationStatus, DeleteResultSetResponse,
+    make_sort_key_by_field, make_sort_request, make_trigger_resource_control_request, Apdu, Close, CloseReason, Credentials, DeleteOperationStatus, DeleteResultSetResponse,
     DuplicateDetectionResponse, DuplicateDetectionStatus, ExtendedServicesFunction, ExtendedServicesResponse, ExtendedServicesStatus, External, ListEntries, ResourceReport, ResourceReportResponse,
     ResourceReportStatus, ScanResponse, ScanStatus, SearchResponse, SortKeySpec, SortResponse, SortStatus, TriggerRequestedAction, WaitAction,
 };
@@ -53,11 +54,11 @@ impl Client {
     }
 
     /// Executes a Type-1 (RPN) search against the given databases.
-    pub async fn search(&mut self, databases: &[&str], term: &str) -> Result<SearchResponse> {
+    pub async fn search<T: Into<Query>>(&mut self, databases: &[&str], query: T) -> Result<SearchResponse> {
         self.check_not_closed()?;
         let dbs: Vec<String> = databases.iter().map(|s| s.to_string()).collect();
-        let query = make_type1_query(4, term)?;
-        let req = make_search_request(&dbs, &self.result_set, query)?;
+        // let query = make_type1_query(4, term)?;
+        let req = make_search_request(&dbs, &self.result_set, query.into())?;
         send_pdu(&mut self.stream, &Apdu::SearchRequest(req)).await?;
 
         let r = read_pdu::<SearchResponse>(&mut self.stream).await?;
@@ -184,9 +185,14 @@ impl Client {
         }
         let req = make_close_request(reason, diagnostic_info);
         send_pdu(&mut self.stream, &Apdu::Close(req)).await?;
-        let r = read_pdu::<Close>(&mut self.stream).await?;
-        self.closed = true;
-        Ok(r)
+        let apdu = read_pdu::<Apdu>(&mut self.stream).await?;
+        match apdu {
+            Apdu::Close(close) => {
+                self.closed = true;
+                Ok(close)
+            }
+            _ => Err(Error::Protocol(format!("Expected Close, got {:?}", apdu))),
+        }
     }
 
     /// Returns true if the connection has been closed.
@@ -319,7 +325,6 @@ impl Client {
 
 async fn send_pdu(stream: &mut TcpStream, pdu: &Apdu) -> Result<()> {
     let bytes = rasn::ber::encode(pdu).map_err(|e| Error::BerEncode(e.to_string()))?;
-
     stream.write_all(&bytes).await?;
     stream.flush().await?;
     Ok(())
@@ -328,8 +333,20 @@ async fn send_pdu(stream: &mut TcpStream, pdu: &Apdu) -> Result<()> {
 async fn read_pdu<T: rasn::AsnType + rasn::Decode + std::fmt::Debug>(stream: &mut TcpStream) -> Result<T> {
     let frame = read_ber_frame(stream).await?;
 
-    let decoded = rasn::ber::decode::<T>(&frame).map_err(|e| Error::BerDecode(e.to_string()))?;
-    Ok(decoded)
+    match rasn::ber::decode::<T>(&frame).map_err(|e| Error::BerDecode(e.to_string())) {
+        Ok(decoded) => Ok(decoded),
+        Err(e) => {
+            // try to decode as Apdu to check if it's a Close
+            if let Ok(apdu) = rasn::ber::decode::<Apdu>(&frame).map_err(|e| Error::BerDecode(e.to_string())) {
+                if let Apdu::Close(close) = apdu {
+                    return Err(Error::Protocol(format!("Close: reason={:?}, diagnostic={:?}", 
+                        close.close_reason, 
+                        close.diagnostic_information)));
+                }
+            }
+            Err(e)
+        }
+    }
 }
 
 /// Reads a complete BER-encoded frame from the stream.

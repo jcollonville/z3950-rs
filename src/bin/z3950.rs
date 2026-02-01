@@ -7,7 +7,7 @@ use std::convert::TryInto;
 use clap::Parser;
 use rustyline::error::ReadlineError;
 use rustyline::DefaultEditor;
-use z3950_rs::{Client, Entry};
+use z3950_rs::{Client, Entry, QueryLanguage};
 
 #[derive(Parser)]
 #[command(name = "z3950")]
@@ -30,7 +30,7 @@ struct Cli {
     format: OutputFormat,
 
     /// Database name(s), comma-separated
-    #[arg(short, long, default_value = "default")]
+    #[arg(short, long, default_value = "Default")]
     database: String,
 }
 
@@ -203,7 +203,9 @@ async fn execute_command(state: &mut SessionState, line: &str) -> z3950_rs::Resu
             let query = args.join(" ");
             let client = state.client.as_mut().unwrap();
             let dbs: Vec<&str> = state.database.split(',').map(str::trim).collect();
-            let response = client.search(&dbs, &query).await?;
+            println!("query: {:?}", query);
+            println!("cql: {:?}", QueryLanguage::CQL(query.clone()));
+            let response = client.search(&dbs, QueryLanguage::CQL(query)).await?;
             let result_count: i64 = response.result_count.try_into().unwrap_or(0);
 
             match state.format {

@@ -1105,14 +1105,14 @@ pub enum Record {
     FinalFragment(FragmentSyntax),
 }
 
-#[derive(Debug, AsnType, Encode, Decode)]
+#[derive(Debug, AsnType, Encode, Decode, Clone)]
 #[rasn(choice)]
 pub enum FragmentSyntax {
     ExternallyTagged(External),
     NotExternallyTagged(OctetString),
 }
 
-#[derive(Debug, AsnType, Encode, Decode)]
+#[derive(Debug, AsnType, Encode, Decode, Clone)]
 #[rasn(tag(universal, 8))]
 pub struct External {
     pub direct_reference: Option<ObjectIdentifier>,
@@ -1121,7 +1121,7 @@ pub struct External {
     pub encoding: ExternalEncoding,
 }
 
-#[derive(Debug, AsnType, Encode, Decode)]
+#[derive(Debug, AsnType, Encode, Decode, Clone)]
 #[rasn(choice)]
 pub enum ExternalEncoding {
     #[rasn(tag(context, 0))]
@@ -1190,7 +1190,7 @@ pub struct RpnQuery {
     pub rpn: RpnStructure,
 }
 
-#[derive(Debug, AsnType, Encode, Decode)]
+#[derive(Debug, AsnType, Encode, Decode, Clone)]
 #[rasn(choice)]
 pub enum RpnStructure {
     #[rasn(tag(context, 0))]
@@ -1199,14 +1199,14 @@ pub enum RpnStructure {
     RpnRpnOperator(RpnRpnOperator),
 }
 
-#[derive(Debug, AsnType, Encode, Decode)]
+#[derive(Debug, AsnType, Encode, Decode, Clone)]
 pub struct RpnRpnOperator {
     pub rpn1: Box<RpnStructure>, // Box est nécessaire pour la récursion
     pub rpn2: Box<RpnStructure>,
     pub op: Operator,
 }
 
-#[derive(Debug, AsnType, Encode, Decode)]
+#[derive(Debug, AsnType, Encode, Decode, Clone)]
 #[rasn(choice)]
 pub enum Operator {
     #[rasn(tag(context, 0))]
@@ -1217,7 +1217,7 @@ pub enum Operator {
     AndNot(()),
 }
 
-#[derive(Debug, AsnType, Encode, Decode)]
+#[derive(Debug, AsnType, Encode, Decode, Clone)]
 #[rasn(choice)]
 pub enum Operand {
     #[rasn(tag(context, 102))]
@@ -1228,13 +1228,13 @@ pub enum Operand {
     ResultAttr(ResultSetPlusAttributes),
 }
 
-#[derive(Debug, AsnType, Encode, Decode)]
+#[derive(Debug, AsnType, Encode, Decode, Clone)]
 pub struct ResultSetPlusAttributes {
     pub result_set: Utf8String,
     pub attributes: AttributeList,
 }
 
-#[derive(Debug, AsnType, Encode, Decode)]
+#[derive(Debug, AsnType, Encode, Decode, Clone)]
 #[rasn(tag(context, 102))] // ← le plus important !
 pub struct AttributesPlusTerm {
     #[rasn(tag(context, 44))]
@@ -1242,12 +1242,12 @@ pub struct AttributesPlusTerm {
     pub term: Term,
 }
 
-#[derive(Debug, AsnType, Encode, Decode)]
+#[derive(Debug, AsnType, Encode, Decode, Clone)]
 pub struct AttributeList {
     pub elements: Vec<AttributeElement>,
 }
 
-#[derive(Debug, AsnType, Encode, Decode)]
+#[derive(Debug, AsnType, Encode, Decode, Clone)]
 pub struct AttributeElement {
     #[rasn(tag(context, 1))]
     pub attribute_set: Option<ObjectIdentifier>,
@@ -1256,14 +1256,14 @@ pub struct AttributeElement {
     pub attribute_value: AttributeValue,
 }
 
-#[derive(Debug, AsnType, Encode, Decode)]
+#[derive(Debug, AsnType, Encode, Decode, Clone)]
 #[rasn(choice)]
 pub enum AttributeValue {
     #[rasn(tag(context, 121))]
     Numeric(Integer),
 }
 
-#[derive(Debug, AsnType, Encode, Decode)]
+#[derive(Debug, AsnType, Encode, Decode, Clone)]
 #[rasn(choice)]
 pub enum Term {
     #[rasn(tag(45))]
@@ -1285,7 +1285,7 @@ pub enum Term {
     Null(()),
 }
 
-#[derive(Debug, AsnType, Encode, Decode)]
+#[derive(Debug, AsnType, Encode, Decode, Clone)]
 #[rasn(choice)]
 pub enum IntUnit {
     #[rasn(tag(context, 1))]
@@ -1294,7 +1294,7 @@ pub enum IntUnit {
     Unit(Unit),
 }
 
-#[derive(Debug, AsnType, Encode, Decode)]
+#[derive(Debug, AsnType, Encode, Decode, Clone)]
 
 pub struct Unit {
     #[rasn(tag(context, 1))]
@@ -1305,7 +1305,7 @@ pub struct Unit {
     pub unit: Option<StringOrNumeric>,
 }
 
-#[derive(Debug, AsnType, Encode, Decode)]
+#[derive(Debug, AsnType, Encode, Decode, Clone)]
 #[rasn(choice)]
 pub enum StringOrNumeric {
     #[rasn(tag(context, 1))]
