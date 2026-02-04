@@ -355,16 +355,17 @@ pub enum DeleteFunction {
 pub type ResultSetId = Utf8String;
 
 #[derive(Debug, AsnType, Encode, Decode)]
+#[rasn(tag(context, 27))]
 pub struct DeleteResultSetResponse {
     #[rasn(tag(context, 2))]
     pub reference_id: Option<OctetString>,
-    #[rasn(tag(context, 33))]
+    #[rasn(tag(context, 0))]
     pub delete_operation_status: DeleteOperationStatus,
-    #[rasn(tag(context, 34))]
+    #[rasn(tag(context, 1))]
     pub delete_list_statuses: Option<Vec<ListStatus>>,
-    #[rasn(tag(context, 35))]
+    #[rasn(tag(context, 34))]
     pub number_not_deleted: Option<Integer>,
-    #[rasn(tag(context, 37))]
+    #[rasn(tag(context, 35))]
     pub bulk_statuses: Option<Vec<ListStatus>>,
     #[rasn(tag(context, 36))]
     pub delete_message: Option<Utf8String>,

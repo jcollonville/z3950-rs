@@ -205,7 +205,7 @@ async fn execute_command(state: &mut SessionState, line: &str) -> z3950_rs::Resu
             let dbs: Vec<&str> = state.database.split(',').map(str::trim).collect();
             println!("query: {:?}", query);
             println!("cql: {:?}", QueryLanguage::CQL(query.clone()));
-            let response = client.search(&dbs, QueryLanguage::CQL(query)).await?;
+            let response = client.search(&dbs, QueryLanguage::CQL(query.clone())).await?;
             let result_count: i64 = response.result_count.try_into().unwrap_or(0);
 
             match state.format {
