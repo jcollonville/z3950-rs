@@ -402,30 +402,33 @@ fn cql_node_to_rpn(node: CqlNode) -> Result<RpnStructure> {
                 attribute_value: AttributeValue::Numeric(relation_value.into()),
             });
             
-            // For exact match (=), use minimal attributes
-            // For other relations, add additional attributes for better matching
-            if relation != "=" {
-                // Position attribute (Type 3) - default to "any" (3)
-                attributes.push(AttributeElement {
-                    attribute_set: None,
-                    attribute_type: 3.into(), // Position attribute type
-                    attribute_value: AttributeValue::Numeric(3.into()), // any position
-                });
-                
-                // Structure attribute (Type 4) - default to "word" (2)
-                attributes.push(AttributeElement {
-                    attribute_set: None,
-                    attribute_type: 4.into(), // Structure attribute type
-                    attribute_value: AttributeValue::Numeric(2.into()), // word
-                });
-                
-                // Truncation attribute (Type 5) - right truncation (100)
-                attributes.push(AttributeElement {
-                    attribute_set: None,
-                    attribute_type: 5.into(), // Truncation attribute type
-                    attribute_value: AttributeValue::Numeric(100.into()), // right truncation
-                });
-            }
+            // Position attribute (Type 3) - default to "any" (3)
+            attributes.push(AttributeElement {
+                attribute_set: None,
+                attribute_type: 3.into(), // Position attribute type
+                attribute_value: AttributeValue::Numeric(3.into()), // any position
+            });
+            
+            // Structure attribute (Type 4) - default to "word" (2)
+            attributes.push(AttributeElement {
+                attribute_set: None,
+                attribute_type: 4.into(), // Structure attribute type
+                attribute_value: AttributeValue::Numeric(2.into()), // word
+            });
+            
+            // Truncation attribute (Type 5) - default to "right truncation" (100)
+            // For exact match (=), use "no truncation" (100) or "right truncation" (100)
+            // For other relations, use right truncation (100)
+            let truncation_value = if relation == "=" {
+                100 // right truncation (or could be 0 for no truncation, but 100 is more common)
+            } else {
+                100 // right truncation
+            };
+            attributes.push(AttributeElement {
+                attribute_set: None,
+                attribute_type: 5.into(), // Truncation attribute type
+                attribute_value: AttributeValue::Numeric(truncation_value.into()),
+            });
 
             Ok(RpnStructure::Op(Operand::AttributesPlusTerm(
                 AttributesPlusTerm {
@@ -459,12 +462,34 @@ fn cql_node_to_rpn(node: CqlNode) -> Result<RpnStructure> {
 
             match op {
                 CqlOperator::Not => {
-                    // AND NOT: we need to create (operand AND NOT operand2)
-                    // For simplicity, we'll create a structure with the operand and a dummy term
-                    // In practice, AND NOT requires two operands, so we'll use the operand twice
-                    // This is a simplified approach - a full implementation might need different handling
+                    // NOT in Z39.50 RPN is typically represented as AND NOT
+                    // We need to create a structure that represents "NOT operand"
+                    // In Z39.50, NOT is usually combined with AND: we create a dummy "all" term
+                    // and use AND NOT with the operand
+                    // However, a simpler approach is to use the operand with a relation "not equal"
+                    // But the standard way is to use AND NOT with a universal set
+                    // For now, we'll create a structure that represents NOT by using AND NOT
+                    // with a universal term (any field, any value)
+                    let universal_term = RpnStructure::Op(Operand::AttributesPlusTerm(
+                        AttributesPlusTerm {
+                            attributes: vec![
+                                AttributeElement {
+                                    attribute_set: None,
+                                    attribute_type: 1.into(), // Use: any (1016)
+                                    attribute_value: AttributeValue::Numeric(1016.into()),
+                                },
+                                AttributeElement {
+                                    attribute_set: None,
+                                    attribute_type: 2.into(), // Relation: equal (3)
+                                    attribute_value: AttributeValue::Numeric(3.into()),
+                                },
+                            ],
+                            term: Term::General(OctetString::from(b"*".as_slice())),
+                        },
+                    ));
+                    
                     Ok(RpnStructure::RpnRpnOperator(RpnRpnOperator {
-                        rpn1: Box::new(rpn_operand.clone()),
+                        rpn1: Box::new(universal_term),
                         rpn2: Box::new(rpn_operand),
                         op: Operator::AndNot(()),
                     }))
@@ -483,13 +508,19 @@ impl From<QueryLanguage> for Query {
         match query_language {
             QueryLanguage::CQL(query) => {
                 // Try to parse and convert CQL to Query
-                // If parsing fails, we'll return an error query (Type100 with error message)
-                // In practice, you might want to return a Result instead
+                // If parsing fails, create a Type1 query with the raw CQL string as term
                 match parse_cql_to_query(&query) {
                     Ok(q) => q,
                     Err(_) => {
-                        // Fallback: create a Type100 query with the raw CQL string
-                        Query::Type100(OctetString::from(query.as_bytes().to_vec()))
+                        // Fallback: create a Type1 query with the raw CQL string as term
+                        let rpn_query = RpnQuery {
+                            attribute_set: crate::pdu::bib1_attribute_set().unwrap(),
+                            rpn: RpnStructure::Op(Operand::AttributesPlusTerm(AttributesPlusTerm {
+                                attributes: vec![], // No explicit attributes
+                                term: Term::General(OctetString::from(query.as_bytes().to_vec())),
+                            })),
+                        };
+                        Query::Type1(rpn_query)
                     }
                 }
             }
@@ -503,37 +534,9 @@ impl From<QueryLanguage> for Query {
 
 
 /// Parses CQL string and converts it to a Z39.50 Query
-/// For simple queries like "title=value", sends Type-1 RPN with the term but no explicit attributes
-/// (like yaz-client does - the server interprets "index=value" syntax)
-/// For complex queries with AND/OR/NOT, uses full RPN with explicit BIB-1 attributes
+/// All queries are converted to Type-1 RPN with explicit BIB-1 attributes
 pub fn parse_cql_to_query(cql: &str) -> Result<Query> {
-    // Check if this is a simple query (no operators, no parentheses)
-    // Simple format: "index=value" or "index=\"value\""
-    if cql.contains('=') && !cql.contains(" AND ") && !cql.contains(" OR ") && !cql.contains(" NOT ") 
-        && !cql.contains('(') && !cql.contains(')') {
-        // For simple queries, send the raw query string as the term WITHOUT explicit attributes
-        // This is what yaz-client does: RPN @attrset Bib-1 title=athena
-        // The server interprets "index=value" syntax
-        
-        // Strip quotes from value if present for clean query
-        let clean_query = if cql.contains('"') {
-            cql.replace('"', "")
-        } else {
-            cql.to_string()
-        };
-        
-        let rpn_query = RpnQuery {
-            attribute_set: crate::pdu::bib1_attribute_set()?,
-            rpn: RpnStructure::Op(Operand::AttributesPlusTerm(AttributesPlusTerm {
-                attributes: vec![], // No explicit attributes - server interprets "index=value"
-                term: Term::General(OctetString::from(clean_query.as_bytes().to_vec())),
-            })),
-        };
-        
-        return Ok(Query::Type1(rpn_query));
-    }
-    
-    // For complex queries with AND/OR/NOT, use full RPN with explicit BIB-1 attributes
+    // Parse CQL and convert to RPN with explicit BIB-1 attributes
     let mut parser = CqlParser::new(cql);
     let ast = parser.parse()?;
     let rpn_structure = cql_node_to_rpn(ast)?;

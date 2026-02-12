@@ -1,6 +1,6 @@
 [package]
 name = "z3950-rs"
-version = "0.2.3"
+version = "0.2.4"
 edition = "2021"
 description = "Minimal asynchronous (Tokio) Z39.50 client with MARC parsing"
 license = "MIT OR Apache-2.0"
@@ -19,10 +19,11 @@ tracing = "0.1"
 clap = { version = "4", features = ["derive"], optional = true }
 serde_json = { version = "1", optional = true }
 rustyline = { version = "14", optional = true }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"], optional = true }
 
 [features]
 default = []
-cli = ["clap", "serde_json", "rustyline"]
+cli = ["clap", "serde_json", "rustyline", "tracing-subscriber"]
 
 [[bin]]
 name = "z3950"

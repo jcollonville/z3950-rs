@@ -11,6 +11,7 @@ use crate::pdu::{
 use rasn::types::ObjectIdentifier;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
+use tracing::{debug, trace};
 
 const DEFAULT_RESULT_SET: &str = "default";
 
@@ -28,13 +29,22 @@ impl Client {
 
     /// Connects to a Z39.50 target and performs an Init handshake using simple credentials.
     pub async fn connect_with_credentials(addr: &str, credentials: Option<(&str, &str)>) -> Result<Self> {
+        debug!(address = addr, "Connecting to Z39.50 server");
+        trace!(address = addr, credentials_provided = credentials.is_some(), "Connection parameters");
+        
         let mut stream = TcpStream::connect(addr).await?;
+        trace!("TCP connection established");
 
         let credentials = credentials.map(|(u, p)| Credentials::new(u, p));
         let init = make_init_request(credentials.as_ref())?;
+        trace!("Init request created");
+        
         send_pdu(&mut stream, &Apdu::InitRequest(init)).await?;
+        debug!("Init request sent");
 
-        let _r = read_pdu::<crate::pdu::InitResponse>(&mut stream).await?;
+        let r = read_pdu::<crate::pdu::InitResponse>(&mut stream).await?;
+        trace!(?r, "Init response received");
+        debug!("Init handshake completed successfully");
 
         Ok(Self {
             stream,
@@ -50,34 +60,53 @@ impl Client {
 
     /// Sets a custom result set name for subsequent operations.
     pub fn set_result_set_name(&mut self, name: impl Into<String>) {
-        self.result_set = name.into();
+        let new_name = name.into();
+        trace!(old_name = %self.result_set, new_name = %new_name, "Setting result set name");
+        self.result_set = new_name;
     }
 
     /// Executes a Type-1 (RPN) search against the given databases.
     pub async fn search<T: Into<Query>>(&mut self, databases: &[&str], query: T) -> Result<SearchResponse> {
         self.check_not_closed()?;
         let dbs: Vec<String> = databases.iter().map(|s| s.to_string()).collect();
-        // let query = make_type1_query(4, term)?;
-        let req = make_search_request(&dbs, &self.result_set, query.into())?;
+        let query_obj = query.into();
+        debug!(databases = ?dbs, result_set = %self.result_set, "Executing search");
+        trace!(?query_obj, "Search query details");
+        
+        let req = make_search_request(&dbs, &self.result_set, query_obj)?;
+        trace!("Search request created");
         send_pdu(&mut self.stream, &Apdu::SearchRequest(req)).await?;
+        debug!("Search request sent");
 
         let r = read_pdu::<SearchResponse>(&mut self.stream).await?;
+        trace!(result_count = ?r.result_count, search_status = ?r.search_status, "Search response received");
+        debug!(result_count = ?r.result_count, "Search completed");
         Ok(r)
     }
 
     /// Presents raw record data from the current result set.
     pub async fn present_raw(&mut self, start: i64, count: i64) -> Result<Vec<Vec<u8>>> {
         self.check_not_closed()?;
+        debug!(result_set = %self.result_set, start, count, "Presenting records");
         let req = make_present_request(&self.result_set, start, count)?;
+        trace!("Present request created");
         send_pdu(&mut self.stream, &Apdu::PresentRequest(req)).await?;
+        debug!("Present request sent");
+        
         let r = read_pdu::<crate::pdu::PresentResponse>(&mut self.stream).await?;
-        extract_marc_records(&r)
+        trace!(present_status = ?r.present_status, "Present response received");
+        let records = extract_marc_records(&r)?;
+        debug!(record_count = records.len(), "Records extracted");
+        Ok(records)
     }
 
     /// Presents and parses MARC records from the current result set.
     pub async fn present_marc(&mut self, start: i64, count: i64) -> Result<Vec<MarcRecord>> {
         let raw = self.present_raw(start, count).await?;
-        parse_records(&raw)
+        trace!(raw_count = raw.len(), "Parsing MARC records");
+        let records = parse_records(&raw)?;
+        debug!(parsed_count = records.len(), "MARC records parsed");
+        Ok(records)
     }
 
     // ========================================================================
@@ -87,18 +116,22 @@ impl Client {
     /// Deletes specific result sets by name.
     pub async fn delete_result_sets(&mut self, result_sets: &[&str]) -> Result<DeleteResultSetResponse> {
         self.check_not_closed()?;
+        debug!(result_sets = ?result_sets, "Deleting result sets");
         let req = make_delete_result_set_request(result_sets);
         send_pdu(&mut self.stream, &Apdu::DeleteResultSetRequest(req)).await?;
         let r = read_pdu::<DeleteResultSetResponse>(&mut self.stream).await?;
+        trace!(delete_status = ?r.delete_operation_status, "Delete result set response received");
         Ok(r)
     }
 
     /// Deletes all result sets.
     pub async fn delete_all_result_sets(&mut self) -> Result<DeleteResultSetResponse> {
         self.check_not_closed()?;
+        debug!("Deleting all result sets");
         let req = make_delete_all_result_sets_request();
         send_pdu(&mut self.stream, &Apdu::DeleteResultSetRequest(req)).await?;
         let r = read_pdu::<DeleteResultSetResponse>(&mut self.stream).await?;
+        trace!(delete_status = ?r.delete_operation_status, "Delete all result sets response received");
         Ok(r)
     }
 
@@ -122,12 +155,16 @@ impl Client {
     pub async fn scan(&mut self, databases: &[&str], term: &str, attribute_type: i64, count: i64, preferred_position: Option<i64>) -> Result<ScanResponse> {
         self.check_not_closed()?;
         let dbs: Vec<String> = databases.iter().map(|s| s.to_string()).collect();
+        debug!(databases = ?dbs, term, attribute_type, count, "Scanning index");
+        trace!(preferred_position, "Scan parameters");
+        
         let req = make_scan_request(&dbs, term, attribute_type, None, count, preferred_position)?;
-
         send_pdu(&mut self.stream, &Apdu::ScanRequest(req)).await?;
+        debug!("Scan request sent");
 
         let r = read_pdu::<ScanResponse>(&mut self.stream).await?;
-
+        trace!(scan_status = ?r.scan_status, "Scan response received");
+        debug!("Scan completed");
         Ok(r)
     }
 
@@ -153,9 +190,12 @@ impl Client {
     /// * `sort_keys` - Sort specifications (use `make_sort_key_by_field` helper)
     pub async fn sort(&mut self, input_result_sets: &[&str], output_result_set: &str, sort_keys: Vec<SortKeySpec>) -> Result<SortResponse> {
         self.check_not_closed()?;
+        debug!(input_result_sets = ?input_result_sets, output_result_set, "Sorting result sets");
+        trace!(sort_keys_count = sort_keys.len(), "Sort keys");
         let req = make_sort_request(input_result_sets, output_result_set, sort_keys);
         send_pdu(&mut self.stream, &Apdu::SortRequest(req)).await?;
         let r = read_pdu::<SortResponse>(&mut self.stream).await?;
+        trace!(sort_status = ?r.sort_status, "Sort response received");
         Ok(r)
     }
 
@@ -175,6 +215,7 @@ impl Client {
 
     /// Closes the Z39.50 session gracefully.
     pub async fn close(&mut self) -> Result<Close> {
+        debug!("Closing Z39.50 session");
         self.close_with_reason(CloseReason::Finished, None).await
     }
 
@@ -183,12 +224,15 @@ impl Client {
         if self.closed {
             return Err(Error::Protocol("Connection already closed".into()));
         }
+        debug!(?reason, "Closing session with reason");
+        trace!(diagnostic_info, "Close diagnostic info");
         let req = make_close_request(reason, diagnostic_info);
         send_pdu(&mut self.stream, &Apdu::Close(req)).await?;
         let apdu = read_pdu::<Apdu>(&mut self.stream).await?;
         match apdu {
             Apdu::Close(close) => {
                 self.closed = true;
+                debug!("Session closed successfully");
                 Ok(close)
             }
             _ => Err(Error::Protocol(format!("Expected Close, got {:?}", apdu))),
@@ -221,9 +265,12 @@ impl Client {
         wait_action: WaitAction,
     ) -> Result<ExtendedServicesResponse> {
         self.check_not_closed()?;
+        debug!(?function, ?package_type, "Sending extended services request");
+        trace!(package_name, ?wait_action, "Extended services parameters");
         let req = make_extended_services_request(function, package_type, package_name, task_specific_parameters, wait_action);
         send_pdu(&mut self.stream, &Apdu::ExtendedServicesRequest(req)).await?;
         let r = read_pdu::<ExtendedServicesResponse>(&mut self.stream).await?;
+        trace!(operation_status = ?r.operation_status, "Extended services response received");
         Ok(r)
     }
 
@@ -244,9 +291,11 @@ impl Client {
     /// * `clustering` - Whether to cluster duplicates together
     pub async fn duplicate_detection(&mut self, input_result_sets: &[&str], output_result_set: &str, clustering: bool) -> Result<DuplicateDetectionResponse> {
         self.check_not_closed()?;
+        debug!(input_result_sets = ?input_result_sets, output_result_set, clustering, "Performing duplicate detection");
         let req = make_duplicate_detection_request(input_result_sets, output_result_set, clustering);
         send_pdu(&mut self.stream, &Apdu::DuplicateDetectionRequest(req)).await?;
         let r = read_pdu::<DuplicateDetectionResponse>(&mut self.stream).await?;
+        trace!(status = ?r.status, "Duplicate detection response received");
         Ok(r)
     }
 
@@ -262,6 +311,7 @@ impl Client {
     /// Sends a resource control response (typically in response to a resource control request from the server).
     pub async fn send_resource_control_response(&mut self, continue_flag: bool, result_set_wanted: Option<bool>) -> Result<()> {
         self.check_not_closed()?;
+        debug!(continue_flag, ?result_set_wanted, "Sending resource control response");
         let resp = make_resource_control_response(continue_flag, result_set_wanted);
         send_pdu(&mut self.stream, &Apdu::ResourceControlResponse(resp)).await?;
         Ok(())
@@ -270,6 +320,7 @@ impl Client {
     /// Triggers a resource control action on the server.
     pub async fn trigger_resource_control(&mut self, action: TriggerRequestedAction, result_set_wanted: Option<bool>) -> Result<()> {
         self.check_not_closed()?;
+        debug!(?action, ?result_set_wanted, "Triggering resource control");
         let req = make_trigger_resource_control_request(action, result_set_wanted);
         send_pdu(&mut self.stream, &Apdu::TriggerResourceControlRequest(req)).await?;
         Ok(())
@@ -282,9 +333,12 @@ impl Client {
     /// Requests a resource report from the server.
     pub async fn resource_report(&mut self, op_id: Option<&[u8]>, preferred_format: Option<ObjectIdentifier>) -> Result<ResourceReportResponse> {
         self.check_not_closed()?;
+        debug!("Requesting resource report");
+        trace!(op_id_len = op_id.map(|id| id.len()), ?preferred_format, "Resource report parameters");
         let req = make_resource_report_request(op_id, preferred_format);
         send_pdu(&mut self.stream, &Apdu::ResourceReportRequest(req)).await?;
         let r = read_pdu::<ResourceReportResponse>(&mut self.stream).await?;
+        trace!(resource_report_status = ?r.resource_report_status, "Resource report response received");
         Ok(r)
     }
 
@@ -305,6 +359,7 @@ impl Client {
     /// Sends an access control response (typically in response to an access control request from the server).
     pub async fn send_access_control_response(&mut self, response_data: &[u8]) -> Result<()> {
         self.check_not_closed()?;
+        debug!(data_len = response_data.len(), "Sending access control response");
         let resp = make_access_control_response(response_data);
         send_pdu(&mut self.stream, &Apdu::AccessControlResponse(resp)).await?;
         Ok(())
@@ -323,27 +378,59 @@ impl Client {
     }
 }
 
+fn format_hex(bytes: &[u8]) -> String {
+    const MAX_BYTES_TO_LOG: usize = 1024;
+    if bytes.len() <= MAX_BYTES_TO_LOG {
+        bytes.iter()
+            .map(|b| format!("{:02x}", b))
+            .collect::<Vec<_>>()
+            .join(" ")
+    } else {
+        let preview: String = bytes[..MAX_BYTES_TO_LOG]
+            .iter()
+            .map(|b| format!("{:02x}", b))
+            .collect::<Vec<_>>()
+            .join(" ");
+        format!("{} ... ({} more bytes)", preview, bytes.len() - MAX_BYTES_TO_LOG)
+    }
+}
+
 async fn send_pdu(stream: &mut TcpStream, pdu: &Apdu) -> Result<()> {
+    trace!(?pdu, "Encoding PDU");
     let bytes = rasn::ber::encode(pdu).map_err(|e| Error::BerEncode(e.to_string()))?;
+    trace!(bytes_len = bytes.len(), "PDU encoded, sending bytes");
+    let hex_data = format_hex(&bytes);
+    trace!(hex = %hex_data, "PDU bytes (hex)");
     stream.write_all(&bytes).await?;
     stream.flush().await?;
+    debug!(pdu_type = ?std::mem::discriminant(pdu), bytes_len = bytes.len(), "PDU sent");
     Ok(())
 }
 
 async fn read_pdu<T: rasn::AsnType + rasn::Decode + std::fmt::Debug>(stream: &mut TcpStream) -> Result<T> {
+    trace!("Reading BER frame");
     let frame = read_ber_frame(stream).await?;
+    trace!(frame_len = frame.len(), "BER frame read, decoding PDU");
+    let hex_data = format_hex(&frame);
+    trace!(hex = %hex_data, "PDU bytes received (hex)");
 
     match rasn::ber::decode::<T>(&frame).map_err(|e| Error::BerDecode(e.to_string())) {
-        Ok(decoded) => Ok(decoded),
+        Ok(decoded) => {
+            debug!(pdu_type = std::any::type_name::<T>(), "PDU decoded successfully");
+            trace!(?decoded, "Decoded PDU");
+            Ok(decoded)
+        }
         Err(e) => {
             // try to decode as Apdu to check if it's a Close
             if let Ok(apdu) = rasn::ber::decode::<Apdu>(&frame).map_err(|e| Error::BerDecode(e.to_string())) {
                 if let Apdu::Close(close) = apdu {
+                    debug!("Received Close PDU");
                     return Err(Error::Protocol(format!("Close: reason={:?}, diagnostic={:?}", 
                         close.close_reason, 
                         close.diagnostic_information)));
                 }
             }
+            trace!(error = %e, "Failed to decode PDU");
             Err(e)
         }
     }
@@ -357,11 +444,14 @@ async fn read_ber_frame(stream: &mut TcpStream) -> Result<Vec<u8>> {
     let mut buffer = Vec::new();
 
     // 1. Read the tag (identifier octets)
+    trace!("Reading first byte (tag)");
     let first_byte = read_byte(stream).await?;
     buffer.push(first_byte);
+    trace!(first_byte, "Tag byte read");
 
     // High-tag-number form: if bits 1-5 are all 1s (0x1F), tag continues
     if (first_byte & 0x1F) == 0x1F {
+        trace!("High-tag-number form detected, reading continuation bytes");
         loop {
             let b = read_byte(stream).await?;
             buffer.push(b);
@@ -375,14 +465,17 @@ async fn read_ber_frame(stream: &mut TcpStream) -> Result<Vec<u8>> {
     // 2. Read the length octet(s)
     let len_byte = read_byte(stream).await?;
     buffer.push(len_byte);
+    trace!(len_byte, "Length byte read");
 
     if len_byte == 0x80 {
         // Indefinite length: read until we find the terminating 00 00
         // We need to track nested indefinite lengths
+        trace!("Indefinite length encoding detected");
         read_indefinite_contents(stream, &mut buffer, MAX_FRAME_SIZE).await?;
     } else if (len_byte & 0x80) != 0 {
         // Long form: bits 1-7 indicate number of subsequent length octets
         let num_len_octets = (len_byte & 0x7F) as usize;
+        trace!(num_len_octets, "Long form length encoding");
         if num_len_octets == 0 || num_len_octets > 8 {
             return Err(Error::BerDecode(format!("Invalid BER length: {} octets", num_len_octets)));
         }
@@ -393,6 +486,7 @@ async fn read_ber_frame(stream: &mut TcpStream) -> Result<Vec<u8>> {
             buffer.push(b);
             length = (length << 8) | (b as usize);
         }
+        trace!(length, "Content length determined");
 
         // Read the definite content
         if buffer.len().saturating_add(length) > MAX_FRAME_SIZE {
@@ -404,6 +498,7 @@ async fn read_ber_frame(stream: &mut TcpStream) -> Result<Vec<u8>> {
     } else {
         // Short form: length is directly in bits 1-7
         let length = len_byte as usize;
+        trace!(length, "Short form length encoding");
         if length > 0 {
             if buffer.len().saturating_add(length) > MAX_FRAME_SIZE {
                 return Err(Error::FrameTooLarge { max: MAX_FRAME_SIZE });
@@ -414,6 +509,7 @@ async fn read_ber_frame(stream: &mut TcpStream) -> Result<Vec<u8>> {
         }
     }
 
+    trace!(total_len = buffer.len(), "BER frame complete");
     Ok(buffer)
 }
 

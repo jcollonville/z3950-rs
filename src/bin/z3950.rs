@@ -7,6 +7,7 @@ use std::convert::TryInto;
 use clap::Parser;
 use rustyline::error::ReadlineError;
 use rustyline::DefaultEditor;
+use tracing_subscriber::{EnvFilter, fmt};
 use z3950_rs::{Client, Entry, QueryLanguage};
 
 #[derive(Parser)]
@@ -32,6 +33,10 @@ struct Cli {
     /// Database name(s), comma-separated
     #[arg(short, long, default_value = "Default")]
     database: String,
+
+    /// Verbosity level (off, error, warn, info, debug, trace)
+    #[arg(short, long, default_value = "off")]
+    verbose: VerbosityLevel,
 }
 
 #[derive(Clone, Copy, Default, Debug, clap::ValueEnum)]
@@ -39,6 +44,29 @@ enum OutputFormat {
     #[default]
     Text,
     Json,
+}
+
+#[derive(Clone, Copy, Debug, clap::ValueEnum)]
+enum VerbosityLevel {
+    Off,
+    Error,
+    Warn,
+    Info,
+    Debug,
+    Trace,
+}
+
+impl VerbosityLevel {
+    fn to_filter(&self) -> String {
+        match self {
+            VerbosityLevel::Off => "off".to_string(),
+            VerbosityLevel::Error => "error".to_string(),
+            VerbosityLevel::Warn => "warn".to_string(),
+            VerbosityLevel::Info => "info".to_string(),
+            VerbosityLevel::Debug => format!("z3950_rs=debug"),
+            VerbosityLevel::Trace => format!("z3950_rs=trace"),
+        }
+    }
 }
 
 struct SessionState {
@@ -70,6 +98,17 @@ impl SessionState {
 #[tokio::main]
 async fn main() {
     let cli = Cli::parse();
+
+    // Initialize tracing subscriber based on verbosity level
+    let filter_str = cli.verbose.to_filter();
+    let filter = EnvFilter::new(&filter_str);
+    let subscriber = fmt::Subscriber::builder()
+        .with_env_filter(filter)
+        .with_writer(std::io::stderr)
+        .finish();
+    
+    tracing::subscriber::set_global_default(subscriber)
+        .expect("Failed to set tracing subscriber");
 
     if let Err(e) = run_interactive(cli).await {
         eprintln!("Error: {e}");
