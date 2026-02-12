@@ -21,6 +21,7 @@ pub use pdu::{
     make_extended_services_request,
     make_init_request,
     make_present_request,
+    make_present_request_with_syntax,
     make_resource_control_response,
     make_resource_report_request,
     make_scan_request,

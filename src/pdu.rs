@@ -1418,13 +1418,31 @@ pub fn make_search_request(databases: &[String], result_set: &str, query: Query)
 }
 
 /// Builds a PresentRequest for the current result set.
+/// By default, no preferred record syntax is specified, allowing the server to choose.
 pub fn make_present_request(result_set: &str, start: i64, count: i64) -> Result<PresentRequest> {
     Ok(PresentRequest {
         reference_id: None,
         result_set_id: Utf8String::from(result_set),
         result_set_start_point: start.into(),
         number_of_records_requested: count.into(),
-        preferred_record_syntax: Some(record_syntax_usmarc()?),
+        preferred_record_syntax: None,
+        other_info: None,
+        additional_ranges: None,
+        record_composition: None,
+        max_segment_count: None,
+        max_record_size: None,
+        max_segment_size: None,
+    })
+}
+
+/// Builds a PresentRequest with a specific preferred record syntax.
+pub fn make_present_request_with_syntax(result_set: &str, start: i64, count: i64, syntax: Option<ObjectIdentifier>) -> Result<PresentRequest> {
+    Ok(PresentRequest {
+        reference_id: None,
+        result_set_id: Utf8String::from(result_set),
+        result_set_start_point: start.into(),
+        number_of_records_requested: count.into(),
+        preferred_record_syntax: syntax,
         other_info: None,
         additional_ranges: None,
         record_composition: None,
@@ -1639,8 +1657,37 @@ pub fn extract_marc_records(resp: &PresentResponse) -> Result<Vec<Vec<u8>>> {
 
     match &resp.records {
         None => Err(Error::Protocol("present response contains no records".into())),
-        Some(Records::NonSurrogateDiagnostic(diag)) => Err(Error::Protocol(format!("present response diagnostic: {diag:?}"))),
-        Some(Records::MultipeNonSurDiagnostic(diags)) => Err(Error::Protocol(format!("present response diagnostics: {diags:?}"))),
+        Some(Records::NonSurrogateDiagnostic(diag)) => Err(Error::Protocol(format_diagnostic(diag))),
+        Some(Records::MultipeNonSurDiagnostic(diags)) => {
+            let diag_msgs: Vec<String> = diags.iter().map(|d| match d {
+                DiagRec::DefaultFormat(df) => format_diagnostic(df),
+                DiagRec::ExternallDefined(_) => format!("external diagnostic: {:?}", d),
+            }).collect();
+            Err(Error::Protocol(format!("present response diagnostics: {}", diag_msgs.join("; "))))
+        },
         Some(other) => Err(Error::Protocol(format!("unexpected records variant in present response: {other:?}"))),
     }
+}
+
+/// Formats a diagnostic message in a human-readable way.
+fn format_diagnostic(diag: &DefaultDiagFormat) -> String {
+    let oid_str = format!("{}", diag.diagnostic_set_id);
+    // Try to convert Integer to i64, fallback to debug format
+    let condition = match <Integer as std::convert::TryInto<i64>>::try_into(diag.condition.clone()) {
+        Ok(i) => i.to_string(),
+        Err(_) => format!("{:?}", diag.condition),
+    };
+    let addinfo_str = match &diag.addinfo {
+        AddInfo::V2Addinfo(vs) => {
+            // Try to parse as OID if it looks like one
+            let s = vs.to_string();
+            if s.chars().all(|c| c.is_ascii_digit() || c == '.') {
+                format!(" (OID: {})", s)
+            } else {
+                format!(" (info: {})", s)
+            }
+        },
+        AddInfo::V3Addinfo(utf8) => format!(" (info: {})", utf8),
+    };
+    format!("present response diagnostic: condition={}, diagnostic_set={}{}", condition, oid_str, addinfo_str)
 }
