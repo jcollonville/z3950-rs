@@ -199,7 +199,7 @@ async fn test_present_marc() {
         for record in &records {
             // Verify record structure (at minimum it should be a valid MarcRecord)
             // Leader is a struct, not a string, so we just verify the record exists
-            assert!(!record.control_fields.is_empty() || !record.data_fields.is_empty(), 
+            assert!(!record.control.is_empty(), 
                     "Record should have some fields");
         }
     }
