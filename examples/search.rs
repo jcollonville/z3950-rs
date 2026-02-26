@@ -4,15 +4,7 @@ use std::env;
 use z3950_rs::Client;
 use z3950_rs::query_languages::QueryLanguage;
 
-fn label(record: &z3950_rs::MarcRecord) -> String {
-    if let Some(cf) = record.control_fields.iter().find(|f| f.tag == "001") {
-        return format!("ID {}", cf.value);
-    }
-    if let Some(df) = record.data_fields.first() {
-        return format!("{} {}", df.tag, df.ind1);
-    }
-    "<record>".to_string()
-}
+
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

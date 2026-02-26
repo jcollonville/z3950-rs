@@ -288,54 +288,11 @@ async fn execute_command(state: &mut SessionState, line: &str) -> z3950_rs::Resu
 
             match state.format {
                 OutputFormat::Text => {
-                    for (i, record) in records.iter().enumerate() {
-                        println!("=== Record {} ===", start + i as i64);
-                        println!("Leader: {:?}", record.leader);
-                        for cf in &record.control_fields {
-                            println!("  {}: {}", cf.tag, cf.value);
-                        }
-                        for df in &record.data_fields {
-                            let subfields: Vec<String> = df.subfields.iter().map(|sf| format!("${}{}", sf.code, sf.value)).collect();
-                            println!("  {} {}{}: {}", df.tag, df.ind1, df.ind2, subfields.join(" "));
-                        }
-                        println!();
-                    }
+                    marc_rs::write(&records, marc_rs::FormatEncoding { format: marc_rs::MarcFormat::Marc21, encoding: marc_rs::Encoding::Utf8 }, &mut std::io::stdout()).unwrap();
                 }
                 OutputFormat::Json => {
-                    let output: Vec<serde_json::Value> = records
-                        .iter()
-                        .map(|r| {
-                            let control_fields: Vec<serde_json::Value> = r.control_fields.iter().map(|f| serde_json::json!({ "tag": f.tag, "value": f.value })).collect();
-                            let data_fields: Vec<serde_json::Value> = r
-                                .data_fields
-                                .iter()
-                                .map(|f| {
-                                    let subfields: Vec<serde_json::Value> = f
-                                        .subfields
-                                        .iter()
-                                        .map(|sf| {
-                                            serde_json::json!({
-                                                "code": sf.code.to_string(),
-                                                "value": sf.value
-                                            })
-                                        })
-                                        .collect();
-                                    serde_json::json!({
-                                        "tag": f.tag,
-                                        "ind1": f.ind1.to_string(),
-                                        "ind2": f.ind2.to_string(),
-                                        "subfields": subfields
-                                    })
-                                })
-                                .collect();
-                            serde_json::json!({
-                                "leader": format!("{:?}", r.leader),
-                                "control_fields": control_fields,
-                                "data_fields": data_fields
-                            })
-                        })
-                        .collect();
-                    println!("{}", serde_json::to_string_pretty(&output).unwrap());
+                    
+                    println!("{}", serde_json::to_string_pretty(&records).unwrap());
                 }
             }
             Ok(false)
