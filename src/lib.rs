@@ -8,6 +8,9 @@ pub use client::Client;
 pub use error::{Error, Result};
 pub use marc::{parse_record, parse_records, MarcRecord};
 
+// Re-export marc-rs
+pub use marc_rs;
+
 // Re-export commonly used PDU types and enums
 pub use pdu::{
     // Helper functions
