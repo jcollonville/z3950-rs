@@ -1,6 +1,6 @@
 [package]
 name = "z3950-rs"
-version = "0.3.0"
+version = "0.3.1"
 edition = "2021"
 description = "Minimal asynchronous (Tokio) Z39.50 client with MARC parsing"
 license = "MIT OR Apache-2.0"
@@ -22,7 +22,7 @@ rustyline = { version = "14", optional = true }
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"], optional = true }
 
 [features]
-default = ["cli"]
+default = []
 cli = ["clap", "serde_json", "rustyline", "tracing-subscriber"]
 
 [[bin]]
