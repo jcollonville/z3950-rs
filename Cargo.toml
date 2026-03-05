@@ -11,7 +11,7 @@ authors = ["jcollonville@b-612.fr>"]
 
 [dependencies]
 tokio = { version = "1", features = ["net", "io-util", "macros", "rt-multi-thread", "time"] }
-marc-rs = "0.4"
+marc-rs = "0.4.1" 
 rasn = "0.28"
 bytes = "1"
 thiserror = "2.0"
