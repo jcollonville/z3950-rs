@@ -1,6 +1,6 @@
 [package]
 name = "z3950-rs"
-version = "0.3.12"
+version = "0.3.13"
 edition = "2021"
 description = "Minimal asynchronous (Tokio) Z39.50 client with MARC parsing"
 license = "MIT OR Apache-2.0"
