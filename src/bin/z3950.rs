@@ -284,14 +284,21 @@ async fn execute_command(state: &mut SessionState, line: &str) -> z3950_rs::Resu
             }
 
             let client = state.client.as_mut().unwrap();
-            let records = client.present_marc(start, count).await?;
+            let raw = client.present_raw(start, count).await?;
+            let reader = marc_rs::MarcReader::from_bytes(raw).unwrap();
 
             match state.format {
                 OutputFormat::Text => {
-                    marc_rs::write(&records, marc_rs::FormatEncoding { format: marc_rs::MarcFormat::Marc21, encoding: marc_rs::Encoding::Utf8 }, &mut std::io::stdout()).unwrap();
+                    for (idx, view) in reader.iter().enumerate() {
+                        let view = view.map_err(|e| z3950_rs::Error::Marc(e.to_string()))?;
+                        println!("Record #{}:", idx + 1);
+                        println!("{view}");
+                    }
+                    
                 }
                 OutputFormat::Json => {
-                    
+                    let records = reader.into_records().map_err(|e| z3950_rs::Error::Marc(e.to_string()))?;
+
                     println!("{}", serde_json::to_string_pretty(&records).unwrap());
                 }
             }

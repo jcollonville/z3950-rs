@@ -168,10 +168,6 @@ async fn test_present_raw() {
     if let Ok(records) = present_result {
         // Verify we got raw MARC records
         assert!(!records.is_empty() || records.is_empty(), "Records should be a valid vector");
-        // Each record should be a Vec<u8>
-        for record in &records {
-            assert!(!record.is_empty() || record.is_empty(), "Each record should be valid bytes");
-        }
     }
     
     let _ = client.close().await;
@@ -196,12 +192,7 @@ async fn test_present_marc() {
     // Present may fail if no results, which is OK
     if let Ok(records) = present_result {
         // Verify we got parsed MARC records
-        for record in &records {
-            // Verify record structure (at minimum it should be a valid MarcRecord)
-            // Leader is a struct, not a string, so we just verify the record exists
-            assert!(!record.leader.record_length > 0, 
-                    "Record should have some fields");
-        }
+        assert!(!records.is_empty(), "Records should be a valid vector");
     }
     
     let _ = client.close().await;

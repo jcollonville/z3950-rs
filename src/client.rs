@@ -85,7 +85,7 @@ impl Client {
     }
 
     /// Presents raw record data from the current result set.
-    pub async fn present_raw(&mut self, start: i64, count: i64) -> Result<Vec<Vec<u8>>> {
+    pub async fn present_raw(&mut self, start: i64, count: i64) -> Result<Vec<u8>> {
         self.check_not_closed()?;
         debug!(result_set = %self.result_set, start, count, "Presenting records");
         let req = make_present_request(&self.result_set, start, count)?;
@@ -104,7 +104,7 @@ impl Client {
     pub async fn present_marc(&mut self, start: i64, count: i64) -> Result<Vec<MarcRecord>> {
         let raw = self.present_raw(start, count).await?;
         trace!(raw_count = raw.len(), "Parsing MARC records");
-        let records = parse_records(&raw)?;
+        let records = parse_records(raw)?;
         debug!(parsed_count = records.len(), "MARC records parsed");
         Ok(records)
     }

@@ -6,7 +6,7 @@ pub mod query_languages;
 pub use query_languages::QueryLanguage;
 pub use client::Client;
 pub use error::{Error, Result};
-pub use marc::{parse_record, parse_records, MarcRecord};
+pub use marc::{parse_records, MarcRecord};
 
 // Re-export marc-rs
 pub use marc_rs;

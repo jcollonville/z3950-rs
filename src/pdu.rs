@@ -1621,7 +1621,7 @@ pub fn make_resource_report_request(op_id: Option<&[u8]>, preferred_format: Opti
 ///
 /// Returns an error if the response carries diagnostics instead of records,
 /// or if the record encoding is not supported.
-pub fn extract_marc_records(resp: &PresentResponse) -> Result<Vec<Vec<u8>>> {
+pub fn extract_marc_records(resp: &PresentResponse) -> Result<Vec<u8>> {
     let mut out = Vec::new();
 
     if let Some(Records::ResponseRecords(records)) = &resp.records {
@@ -1629,10 +1629,10 @@ pub fn extract_marc_records(resp: &PresentResponse) -> Result<Vec<Vec<u8>>> {
             match &rec.record {
                 Record::RetrievalRecord(external) => match &external.encoding {
                     ExternalEncoding::OctetAligned(bytes) => {
-                        out.push(bytes.to_vec());
+                        out.append(&mut bytes.to_vec());
                     }
                     ExternalEncoding::SingleASN1Type(any) => {
-                        out.push(any.as_bytes().to_vec());
+                        out.append(&mut any.as_bytes().to_vec());
                     }
                     other => {
                         return Err(Error::Protocol(format!("unsupported record encoding: {other:?}")));

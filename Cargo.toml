@@ -25,6 +25,8 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"], option
 default = []
 cli = ["clap", "serde_json", "rustyline", "tracing-subscriber"]
 
+
+
 [[bin]]
 name = "z3950"
 path = "src/bin/z3950.rs"
