@@ -1,8 +1,5 @@
 use crate::error::{Error, Result};
-use crate::pdu::{
-    AttributeElement, AttributeValue, AttributesPlusTerm, Operator, Operand, Query, RpnQuery,
-    RpnRpnOperator, RpnStructure, Term,
-};
+use crate::pdu::{AttributeElement, AttributeValue, AttributesPlusTerm, Operand, Operator, Query, RpnQuery, RpnRpnOperator, RpnStructure, Term};
 use rasn::types::OctetString;
 
 /// Query language representation
@@ -15,22 +12,11 @@ pub enum QueryLanguage {
 #[derive(Debug, Clone)]
 enum CqlNode {
     /// Simple term: index = "value"
-    Term {
-        index: String,
-        relation: String,
-        value: String,
-    },
+    Term { index: String, relation: String, value: String },
     /// Binary operator: left AND right, left OR right
-    BinaryOp {
-        op: CqlOperator,
-        left: Box<CqlNode>,
-        right: Box<CqlNode>,
-    },
+    BinaryOp { op: CqlOperator, left: Box<CqlNode>, right: Box<CqlNode> },
     /// Unary operator: NOT term
-    UnaryOp {
-        op: CqlOperator,
-        operand: Box<CqlNode>,
-    },
+    UnaryOp { op: CqlOperator, operand: Box<CqlNode> },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -58,11 +44,7 @@ impl CqlParser {
         let node = self.parse_expression()?;
         self.skip_whitespace();
         if self.pos < self.input.len() {
-            return Err(Error::Protocol(format!(
-                "Unexpected character at position {}: '{}'",
-                self.pos,
-                self.input[self.pos]
-            )));
+            return Err(Error::Protocol(format!("Unexpected character at position {}: '{}'", self.pos, self.input[self.pos])));
         }
         Ok(node)
     }
@@ -165,26 +147,15 @@ impl CqlParser {
             self.consume_str("<>");
             "<>".to_string()
         } else {
-            return Err(Error::Protocol(format!(
-                "Expected relation operator at position {}",
-                self.pos
-            )));
+            return Err(Error::Protocol(format!("Expected relation operator at position {}", self.pos)));
         };
 
         self.skip_whitespace();
 
         // Parse value (quoted string or unquoted string)
-        let value = if self.peek() == Some('"') {
-            self.parse_quoted_string()?
-        } else {
-            self.parse_unquoted_string()?
-        };
+        let value = if self.peek() == Some('"') { self.parse_quoted_string()? } else { self.parse_unquoted_string()? };
 
-        Ok(CqlNode::Term {
-            index,
-            relation,
-            value,
-        })
+        Ok(CqlNode::Term { index, relation, value })
     }
 
     fn parse_identifier(&mut self) -> Result<String> {
@@ -197,10 +168,7 @@ impl CqlParser {
 
         let first = self.input[self.pos];
         if !first.is_alphabetic() && first != '_' {
-            return Err(Error::Protocol(format!(
-                "Invalid identifier start character: '{}' at position {}",
-                first, self.pos
-            )));
+            return Err(Error::Protocol(format!("Invalid identifier start character: '{}' at position {}", first, self.pos)));
         }
 
         self.pos += 1;
@@ -267,10 +235,7 @@ impl CqlParser {
         }
 
         if !in_string {
-            return Err(Error::Protocol(format!(
-                "Expected value at position {}",
-                start
-            )));
+            return Err(Error::Protocol(format!("Expected value at position {}", start)));
         }
 
         Ok(self.input[start..self.pos].iter().collect())
@@ -303,12 +268,7 @@ impl CqlParser {
             self.pos += 1;
             Ok(())
         } else {
-            Err(Error::Protocol(format!(
-                "Expected '{}' at position {}, found '{:?}'",
-                expected,
-                self.pos,
-                self.peek()
-            )))
+            Err(Error::Protocol(format!("Expected '{}' at position {}, found '{:?}'", expected, self.pos, self.peek())))
         }
     }
 
@@ -329,21 +289,21 @@ impl CqlParser {
 fn map_index_to_use_attribute_value(index: &str) -> i64 {
     // Dublin Core mappings to BIB-1 Use attribute values
     match index {
-        "dc.title" | "title" | "t" => 4,      // Title
-        "dc.creator" | "author" | "a" => 1003, // Author
-        "dc.subject" | "subject" | "s" => 21, // Subject
-        "dc.date" | "date" | "d" => 31,       // Date
-        "dc.identifier" | "isbn" => 7,         // ISBN
-        "dc.publisher" | "publisher" => 1018, // Publisher
-        "dc.language" | "language" => 54,     // Language
-        "dc.type" | "type" => 1016,          // Type
-        "dc.format" | "format" => 1017,      // Format
-        "dc.description" | "description" => 62, // Abstract
-        "dc.relation" | "relation" => 1019,  // Relation
-        "dc.coverage" | "coverage" => 1020,  // Coverage
-        "dc.rights" | "rights" => 1021,      // Rights
+        "dc.title" | "title" | "t" => 4,          // Title
+        "dc.creator" | "author" | "a" => 1003,    // Author
+        "dc.subject" | "subject" | "s" => 21,     // Subject
+        "dc.date" | "date" | "d" => 31,           // Date
+        "dc.identifier" | "isbn" => 7,            // ISBN
+        "dc.publisher" | "publisher" => 1018,     // Publisher
+        "dc.language" | "language" => 54,         // Language
+        "dc.type" | "type" => 1016,               // Type
+        "dc.format" | "format" => 1017,           // Format
+        "dc.description" | "description" => 62,   // Abstract
+        "dc.relation" | "relation" => 1019,       // Relation
+        "dc.coverage" | "coverage" => 1020,       // Coverage
+        "dc.rights" | "rights" => 1021,           // Rights
         "dc.contributor" | "contributor" => 1004, // Contributor
-        "dc.source" | "source" => 1015,      // Source
+        "dc.source" | "source" => 1015,           // Source
         // Numeric index (e.g., "1", "2", "3")
         _ => {
             if let Ok(num) = index.parse::<i64>() {
@@ -360,13 +320,13 @@ fn map_index_to_use_attribute_value(index: &str) -> i64 {
 /// BIB-1 Relation attribute values: less than=1, less than or equal=2, equal=3, greater than or equal=4, greater than=5, not equal=6
 fn map_relation_to_bib1_relation(relation: &str) -> i64 {
     match relation {
-        "<" => 1,   // less than
-        "<=" => 2,  // less than or equal
-        "=" => 3,   // equal
-        ">=" => 4,  // greater than or equal
-        ">" => 5,   // greater than
-        "<>" => 6,  // not equal
-        _ => 3,     // default to equal
+        "<" => 1,  // less than
+        "<=" => 2, // less than or equal
+        "=" => 3,  // equal
+        ">=" => 4, // greater than or equal
+        ">" => 5,  // greater than
+        "<>" => 6, // not equal
+        _ => 3,    // default to equal
     }
 }
 
@@ -381,41 +341,41 @@ fn cql_node_to_rpn(node: CqlNode) -> Result<RpnStructure> {
             // - Type 4 (Structure): structure of term (default: word=2)
             // - Type 5 (Truncation): truncation (default: right truncation=100)
             // - Type 6 (Completeness): completeness (default: incomplete=1)
-            
+
             let use_value = map_index_to_use_attribute_value(&index);
             let relation_value = map_relation_to_bib1_relation(&relation);
-            
+
             let mut attributes = Vec::new();
-            
+
             // Use attribute (Type 1) - REQUIRED
             // Note: attribute_set is specified at RpnQuery level, not in each AttributeElement
             attributes.push(AttributeElement {
-                attribute_set: None, // attribute_set is at RpnQuery level
+                attribute_set: None,      // attribute_set is at RpnQuery level
                 attribute_type: 1.into(), // Use attribute type
                 attribute_value: AttributeValue::Numeric(use_value.into()),
             });
-            
+
             // Relation attribute (Type 2) - REQUIRED
             attributes.push(AttributeElement {
-                attribute_set: None, // attribute_set is at RpnQuery level
+                attribute_set: None,      // attribute_set is at RpnQuery level
                 attribute_type: 2.into(), // Relation attribute type
                 attribute_value: AttributeValue::Numeric(relation_value.into()),
             });
-            
+
             // Position attribute (Type 3) - default to "any" (3)
             attributes.push(AttributeElement {
                 attribute_set: None,
-                attribute_type: 3.into(), // Position attribute type
+                attribute_type: 3.into(),                           // Position attribute type
                 attribute_value: AttributeValue::Numeric(3.into()), // any position
             });
-            
+
             // Structure attribute (Type 4) - default to "word" (2)
             attributes.push(AttributeElement {
                 attribute_set: None,
-                attribute_type: 4.into(), // Structure attribute type
+                attribute_type: 4.into(),                           // Structure attribute type
                 attribute_value: AttributeValue::Numeric(2.into()), // word
             });
-            
+
             // Truncation attribute (Type 5) - default to "right truncation" (100)
             // For exact match (=), use "no truncation" (100) or "right truncation" (100)
             // For other relations, use right truncation (100)
@@ -430,12 +390,10 @@ fn cql_node_to_rpn(node: CqlNode) -> Result<RpnStructure> {
                 attribute_value: AttributeValue::Numeric(truncation_value.into()),
             });
 
-            Ok(RpnStructure::Op(Operand::AttributesPlusTerm(
-                AttributesPlusTerm {
-                    attributes,
-                    term: Term::General(OctetString::from(value.as_bytes().to_vec())),
-                },
-            )))
+            Ok(RpnStructure::Op(Operand::AttributesPlusTerm(AttributesPlusTerm {
+                attributes,
+                term: Term::General(OctetString::from(value.as_bytes().to_vec())),
+            })))
         }
         CqlNode::BinaryOp { op, left, right } => {
             let rpn1 = cql_node_to_rpn(*left)?;
@@ -445,9 +403,7 @@ fn cql_node_to_rpn(node: CqlNode) -> Result<RpnStructure> {
                 CqlOperator::And => Operator::And(()),
                 CqlOperator::Or => Operator::Or(()),
                 CqlOperator::Not => {
-                    return Err(Error::Protocol(
-                        "NOT operator must be unary, not binary".into(),
-                    ));
+                    return Err(Error::Protocol("NOT operator must be unary, not binary".into()));
                 }
             };
 
@@ -470,34 +426,29 @@ fn cql_node_to_rpn(node: CqlNode) -> Result<RpnStructure> {
                     // But the standard way is to use AND NOT with a universal set
                     // For now, we'll create a structure that represents NOT by using AND NOT
                     // with a universal term (any field, any value)
-                    let universal_term = RpnStructure::Op(Operand::AttributesPlusTerm(
-                        AttributesPlusTerm {
-                            attributes: vec![
-                                AttributeElement {
-                                    attribute_set: None,
-                                    attribute_type: 1.into(), // Use: any (1016)
-                                    attribute_value: AttributeValue::Numeric(1016.into()),
-                                },
-                                AttributeElement {
-                                    attribute_set: None,
-                                    attribute_type: 2.into(), // Relation: equal (3)
-                                    attribute_value: AttributeValue::Numeric(3.into()),
-                                },
-                            ],
-                            term: Term::General(OctetString::from(b"*".as_slice())),
-                        },
-                    ));
-                    
+                    let universal_term = RpnStructure::Op(Operand::AttributesPlusTerm(AttributesPlusTerm {
+                        attributes: vec![
+                            AttributeElement {
+                                attribute_set: None,
+                                attribute_type: 1.into(), // Use: any (1016)
+                                attribute_value: AttributeValue::Numeric(1016.into()),
+                            },
+                            AttributeElement {
+                                attribute_set: None,
+                                attribute_type: 2.into(), // Relation: equal (3)
+                                attribute_value: AttributeValue::Numeric(3.into()),
+                            },
+                        ],
+                        term: Term::General(OctetString::from(b"*".as_slice())),
+                    }));
+
                     Ok(RpnStructure::RpnRpnOperator(RpnRpnOperator {
                         rpn1: Box::new(universal_term),
                         rpn2: Box::new(rpn_operand),
                         op: Operator::AndNot(()),
                     }))
                 }
-                _ => Err(Error::Protocol(format!(
-                    "Unsupported unary operator: {:?}",
-                    op
-                ))),
+                _ => Err(Error::Protocol(format!("Unsupported unary operator: {:?}", op))),
             }
         }
     }
@@ -527,11 +478,6 @@ impl From<QueryLanguage> for Query {
         }
     }
 }
-
-
-
-
-
 
 /// Parses CQL string and converts it to a Z39.50 Query
 /// All queries are converted to Type-1 RPN with explicit BIB-1 attributes

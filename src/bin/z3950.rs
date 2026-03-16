@@ -7,7 +7,7 @@ use std::convert::TryInto;
 use clap::Parser;
 use rustyline::error::ReadlineError;
 use rustyline::DefaultEditor;
-use tracing_subscriber::{EnvFilter, fmt};
+use tracing_subscriber::{fmt, EnvFilter};
 use z3950_rs::{Client, Entry, QueryLanguage};
 
 #[derive(Parser)]
@@ -102,13 +102,9 @@ async fn main() {
     // Initialize tracing subscriber based on verbosity level
     let filter_str = cli.verbose.to_filter();
     let filter = EnvFilter::new(&filter_str);
-    let subscriber = fmt::Subscriber::builder()
-        .with_env_filter(filter)
-        .with_writer(std::io::stderr)
-        .finish();
-    
-    tracing::subscriber::set_global_default(subscriber)
-        .expect("Failed to set tracing subscriber");
+    let subscriber = fmt::Subscriber::builder().with_env_filter(filter).with_writer(std::io::stderr).finish();
+
+    tracing::subscriber::set_global_default(subscriber).expect("Failed to set tracing subscriber");
 
     if let Err(e) = run_interactive(cli).await {
         eprintln!("Error: {e}");
@@ -294,7 +290,6 @@ async fn execute_command(state: &mut SessionState, line: &str) -> z3950_rs::Resu
                         println!("Record #{}:", idx + 1);
                         println!("{view}");
                     }
-                    
                 }
                 OutputFormat::Json => {
                     let records = reader.into_records().map_err(|e| z3950_rs::Error::Marc(e.to_string()))?;

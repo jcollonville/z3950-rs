@@ -1659,12 +1659,15 @@ pub fn extract_marc_records(resp: &PresentResponse) -> Result<Vec<u8>> {
         None => Err(Error::Protocol("present response contains no records".into())),
         Some(Records::NonSurrogateDiagnostic(diag)) => Err(Error::Protocol(format_diagnostic(diag))),
         Some(Records::MultipeNonSurDiagnostic(diags)) => {
-            let diag_msgs: Vec<String> = diags.iter().map(|d| match d {
-                DiagRec::DefaultFormat(df) => format_diagnostic(df),
-                DiagRec::ExternallDefined(_) => format!("external diagnostic: {:?}", d),
-            }).collect();
+            let diag_msgs: Vec<String> = diags
+                .iter()
+                .map(|d| match d {
+                    DiagRec::DefaultFormat(df) => format_diagnostic(df),
+                    DiagRec::ExternallDefined(_) => format!("external diagnostic: {:?}", d),
+                })
+                .collect();
             Err(Error::Protocol(format!("present response diagnostics: {}", diag_msgs.join("; "))))
-        },
+        }
         Some(other) => Err(Error::Protocol(format!("unexpected records variant in present response: {other:?}"))),
     }
 }
@@ -1686,7 +1689,7 @@ fn format_diagnostic(diag: &DefaultDiagFormat) -> String {
             } else {
                 format!(" (info: {})", s)
             }
-        },
+        }
         AddInfo::V3Addinfo(utf8) => format!(" (info: {})", utf8),
     };
     format!("present response diagnostic: condition={}, diagnostic_set={}{}", condition, oid_str, addinfo_str)

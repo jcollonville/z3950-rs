@@ -1,10 +1,8 @@
 use std::convert::TryInto;
 use std::env;
 
-use z3950_rs::Client;
 use z3950_rs::query_languages::QueryLanguage;
-
-
+use z3950_rs::Client;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

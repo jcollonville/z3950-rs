@@ -3,10 +3,10 @@ pub mod error;
 mod marc;
 pub mod pdu;
 pub mod query_languages;
-pub use query_languages::QueryLanguage;
 pub use client::Client;
 pub use error::{Error, Result};
 pub use marc::{parse_records, MarcRecord};
+pub use query_languages::QueryLanguage;
 
 // Re-export marc-rs
 pub use marc_rs;

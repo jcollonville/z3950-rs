@@ -1,4 +1,3 @@
-use crate::Query;
 use crate::error::{Error, Result};
 use crate::marc::{parse_records, MarcRecord};
 use crate::pdu::{
@@ -8,6 +7,7 @@ use crate::pdu::{
     DuplicateDetectionResponse, DuplicateDetectionStatus, ExtendedServicesFunction, ExtendedServicesResponse, ExtendedServicesStatus, External, ListEntries, ResourceReport, ResourceReportResponse,
     ResourceReportStatus, ScanResponse, ScanStatus, SearchResponse, SortKeySpec, SortResponse, SortStatus, TriggerRequestedAction, WaitAction,
 };
+use crate::Query;
 use rasn::types::ObjectIdentifier;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
@@ -31,14 +31,14 @@ impl Client {
     pub async fn connect_with_credentials(addr: &str, credentials: Option<(&str, &str)>) -> Result<Self> {
         debug!(address = addr, "Connecting to Z39.50 server");
         trace!(address = addr, credentials_provided = credentials.is_some(), "Connection parameters");
-        
+
         let mut stream = TcpStream::connect(addr).await?;
         trace!("TCP connection established");
 
         let credentials = credentials.map(|(u, p)| Credentials::new(u, p));
         let init = make_init_request(credentials.as_ref())?;
         trace!("Init request created");
-        
+
         send_pdu(&mut stream, &Apdu::InitRequest(init)).await?;
         debug!("Init request sent");
 
@@ -72,7 +72,7 @@ impl Client {
         let query_obj = query.into();
         debug!(databases = ?dbs, result_set = %self.result_set, "Executing search");
         trace!(?query_obj, "Search query details");
-        
+
         let req = make_search_request(&dbs, &self.result_set, query_obj)?;
         trace!("Search request created");
         send_pdu(&mut self.stream, &Apdu::SearchRequest(req)).await?;
@@ -92,7 +92,7 @@ impl Client {
         trace!("Present request created");
         send_pdu(&mut self.stream, &Apdu::PresentRequest(req)).await?;
         debug!("Present request sent");
-        
+
         let r = read_pdu::<crate::pdu::PresentResponse>(&mut self.stream).await?;
         trace!(present_status = ?r.present_status, "Present response received");
         let records = extract_marc_records(&r)?;
@@ -157,7 +157,7 @@ impl Client {
         let dbs: Vec<String> = databases.iter().map(|s| s.to_string()).collect();
         debug!(databases = ?dbs, term, attribute_type, count, "Scanning index");
         trace!(preferred_position, "Scan parameters");
-        
+
         let req = make_scan_request(&dbs, term, attribute_type, None, count, preferred_position)?;
         send_pdu(&mut self.stream, &Apdu::ScanRequest(req)).await?;
         debug!("Scan request sent");
@@ -381,16 +381,9 @@ impl Client {
 fn format_hex(bytes: &[u8]) -> String {
     const MAX_BYTES_TO_LOG: usize = 1024;
     if bytes.len() <= MAX_BYTES_TO_LOG {
-        bytes.iter()
-            .map(|b| format!("{:02x}", b))
-            .collect::<Vec<_>>()
-            .join(" ")
+        bytes.iter().map(|b| format!("{:02x}", b)).collect::<Vec<_>>().join(" ")
     } else {
-        let preview: String = bytes[..MAX_BYTES_TO_LOG]
-            .iter()
-            .map(|b| format!("{:02x}", b))
-            .collect::<Vec<_>>()
-            .join(" ");
+        let preview: String = bytes[..MAX_BYTES_TO_LOG].iter().map(|b| format!("{:02x}", b)).collect::<Vec<_>>().join(" ");
         format!("{} ... ({} more bytes)", preview, bytes.len() - MAX_BYTES_TO_LOG)
     }
 }
@@ -425,9 +418,7 @@ async fn read_pdu<T: rasn::AsnType + rasn::Decode + std::fmt::Debug>(stream: &mu
             if let Ok(apdu) = rasn::ber::decode::<Apdu>(&frame).map_err(|e| Error::BerDecode(e.to_string())) {
                 if let Apdu::Close(close) = apdu {
                     debug!("Received Close PDU");
-                    return Err(Error::Protocol(format!("Close: reason={:?}, diagnostic={:?}", 
-                        close.close_reason, 
-                        close.diagnostic_information)));
+                    return Err(Error::Protocol(format!("Close: reason={:?}, diagnostic={:?}", close.close_reason, close.diagnostic_information)));
                 }
             }
             trace!(error = %e, "Failed to decode PDU");
